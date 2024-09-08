@@ -15,7 +15,24 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-mod backup;
-mod meta;
+use serde::{Deserialize, Serialize};
 
-fn main() {}
+#[derive(Debug, Serialize, Deserialize)]
+pub enum SnapshotKind {
+    Full,        // Record the status of all existing files, but only changes are stored
+    Incremental, // Record only the files that changed from the previous snapshot
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum RetentionPolicy {
+    KeepAll, // Keep all snapshots
+}
+
+#[derive(Debug)]
+pub enum ErrorKind {}
+
+#[derive(Debug)]
+pub struct Error {
+    pub kind: ErrorKind,
+    pub error: String,
+}
