@@ -37,7 +37,7 @@ pub struct SnapshotMetadata {
     pub files: HashMap<String, FileMetadata>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SnapshotsRef {
     pub snapshots: Vec<(String, backup::SnapshotKind, String)>, // (id, kind, timestamp)
 }

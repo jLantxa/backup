@@ -17,6 +17,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::{io::SecureStorage, meta};
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SnapshotKind {
     Full,        // Record the status of all existing files, but only changes are stored
@@ -35,4 +37,20 @@ pub enum ErrorKind {}
 pub struct Error {
     pub kind: ErrorKind,
     pub error: String,
+}
+
+pub struct BackupManager {
+    path: String,
+    secure_storage: SecureStorage,
+    snapshots: meta::SnapshotsRef,
+}
+
+impl BackupManager {
+    pub fn from_repo(path: &str, password: &str) -> Self {
+        Self {
+            path: String::from(path),
+            secure_storage: SecureStorage::new(password),
+            snapshots: todo!(),
+        }
+    }
 }
