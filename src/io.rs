@@ -15,8 +15,22 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-mod backup;
-mod io;
-mod meta;
+use secrecy::Secret;
 
-fn main() {}
+pub struct SecureStorage {
+    key: Secret<[u8; 32]>,
+}
+
+impl SecureStorage {
+    pub fn new(password: &str) -> Self {
+        Self { key: todo!() }
+    }
+
+    pub fn load(&self, path: &str) -> std::io::Result<Vec<u8>> {
+        todo!()
+    }
+
+    pub fn save(&self, path: &str, data: &Vec<u8>) -> std::io::Result<()> {
+        todo!()
+    }
+}
