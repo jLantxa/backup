@@ -15,22 +15,75 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-use secrecy::Secret;
+use std::io::{Read, Write};
 
-pub struct SecureStorage {
-    key: Secret<[u8; 32]>,
-}
+use zstd::stream::read::Decoder as zstdDecoder;
+use zstd::stream::write::Encoder as zstdEncoder;
+
+pub struct SecureStorage {}
 
 impl SecureStorage {
-    pub fn new(password: &str) -> Self {
-        Self { key: todo!() }
+    pub fn load_from_file(&self, path: &str) -> std::io::Result<Vec<u8>> {
+        let data = std::fs::read(path)?;
+        let decompressed_data = Self::decompress(&data)?;
+        Ok(decompressed_data)
     }
 
-    pub fn load(&self, path: &str) -> std::io::Result<Vec<u8>> {
-        todo!()
+    pub fn save_to_file(
+        &self,
+        path: &str,
+        data: &Vec<u8>,
+        compression_level: i32,
+    ) -> std::io::Result<()> {
+        let compressed_data = Self::compress(data, compression_level)?;
+        std::fs::write(path, &compressed_data)?;
+        Ok(())
     }
 
-    pub fn save(&self, path: &str, data: &Vec<u8>) -> std::io::Result<()> {
-        todo!()
+    fn compress(data: &Vec<u8>, compression_level: i32) -> std::io::Result<Vec<u8>> {
+        let mut compressed = Vec::new();
+        let mut encoder = zstdEncoder::new(&mut compressed, compression_level)?;
+        encoder.write_all(data)?;
+        encoder.finish()?;
+        Ok(compressed)
+    }
+
+    fn decompress(data: &Vec<u8>) -> std::io::Result<Vec<u8>> {
+        let mut decompressed = Vec::new();
+        let mut decoder = zstdDecoder::new(data.as_slice())?;
+        decoder.read_to_end(&mut decompressed)?;
+        Ok(decompressed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compression_and_decompression() {
+        let original_data = br#"
+            Lorem ipsum dolor sit amet, consectetur adipisici elit, sed eiusmod tempor incidunt
+            ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation
+            ullamco laboris nisi ut aliquid ex ea commodi consequat. Quis aute iure reprehenderit in
+            voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint obcaecat
+            cupiditat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+            "#;
+
+        let compression_levels = [0, 10, 22];
+
+        for compression_level in compression_levels {
+            let compressed_data =
+                SecureStorage::compress(&original_data.to_vec(), compression_level).unwrap();
+            let decompressed_data = SecureStorage::decompress(&compressed_data).unwrap();
+
+            assert_eq!(*original_data, *decompressed_data);
+
+            let compression_ratio = original_data.len() as f64 / compressed_data.len() as f64;
+            println!(
+                "Compression level {}: Ratio = {:.2}",
+                compression_level, compression_ratio
+            );
+        }
     }
 }
