@@ -49,7 +49,7 @@ impl BackupManager {
     pub fn from_repo(path: &str, password: &str) -> Self {
         Self {
             path: String::from(path),
-            secure_storage: SecureStorage::new(password),
+            secure_storage: todo!(),
             snapshots: todo!(),
         }
     }
