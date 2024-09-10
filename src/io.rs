@@ -16,6 +16,7 @@
  */
 
 use std::io::{Read, Write};
+use std::path::Path;
 
 use zstd::stream::read::Decoder as zstdDecoder;
 use zstd::stream::write::Encoder as zstdEncoder;
@@ -23,7 +24,7 @@ use zstd::stream::write::Encoder as zstdEncoder;
 pub struct SecureStorage {}
 
 impl SecureStorage {
-    pub fn load_from_file(&self, path: &str) -> std::io::Result<Vec<u8>> {
+    pub fn load_from_file(&self, path: &Path) -> std::io::Result<Vec<u8>> {
         let data = std::fs::read(path)?;
         let decompressed_data = Self::decompress(&data)?;
         Ok(decompressed_data)
@@ -31,7 +32,7 @@ impl SecureStorage {
 
     pub fn save_to_file(
         &self,
-        path: &str,
+        path: &Path,
         data: &Vec<u8>,
         compression_level: i32,
     ) -> std::io::Result<()> {

@@ -21,6 +21,10 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+pub const META_PATH: &str = "meta";
+pub const SETTINGS_REF_PATH: &str = "settings";
+pub const SNAPSHOTS_REF_PATH: &str = "snapshots";
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FileMetadata {
     pub path: String,
@@ -42,7 +46,7 @@ pub struct SnapshotsRef {
     pub snapshots: Vec<(String, backup::SnapshotKind, String)>, // (id, kind, timestamp)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SettingsMetadata {
     pub retention_policy: backup::RetentionPolicy,
 }
