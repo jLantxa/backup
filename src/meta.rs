@@ -49,4 +49,5 @@ pub struct SnapshotsRef {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SettingsMetadata {
     pub retention_policy: backup::RetentionPolicy,
+    pub compression_level: backup::CompressionLevel,
 }

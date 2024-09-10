@@ -35,10 +35,14 @@ impl SecureStorage {
         path: &Path,
         data: &Vec<u8>,
         compression_level: i32,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<f64> {
         let compressed_data = Self::compress(data, compression_level)?;
-        std::fs::write(path, &compressed_data)?;
-        Ok(())
+
+        let processed_data = compressed_data;
+        let compression_ratio = data.len() as f64 / processed_data.len() as f64;
+
+        std::fs::write(path, &processed_data)?;
+        Ok(compression_ratio)
     }
 
     fn compress(data: &Vec<u8>, compression_level: i32) -> std::io::Result<Vec<u8>> {
@@ -46,6 +50,7 @@ impl SecureStorage {
         let mut encoder = zstdEncoder::new(&mut compressed, compression_level)?;
         encoder.write_all(data)?;
         encoder.finish()?;
+
         Ok(compressed)
     }
 
@@ -80,10 +85,10 @@ mod tests {
 
             assert_eq!(*original_data, *decompressed_data);
 
-            let compression_ratio = original_data.len() as f64 / compressed_data.len() as f64;
+            let ratio = original_data.len() as f64 / compressed_data.len() as f64;
             println!(
                 "Compression level {}: Ratio = {:.2}",
-                compression_level, compression_ratio
+                compression_level, ratio
             );
         }
     }

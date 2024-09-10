@@ -15,14 +15,9 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-mod backup;
-mod hashing;
-mod io;
-mod meta;
-mod storage;
+use sha2::{Digest, Sha256};
 
-fn main() {
-    let _args: Vec<String> = std::env::args().collect();
-
-    todo!();
+pub fn calculate_hash(data: &[u8]) -> String {
+    let hash = Sha256::digest(data);
+    format!("{:x}", hash)
 }
