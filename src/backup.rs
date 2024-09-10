@@ -44,6 +44,31 @@ impl Default for RetentionPolicy {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub enum CompressionLevel {
+    LOW,
+    MID,
+    HIGH,
+    MAX,
+}
+
+impl Default for CompressionLevel {
+    fn default() -> Self {
+        CompressionLevel::LOW
+    }
+}
+
+impl CompressionLevel {
+    pub fn to_i32(&self) -> i32 {
+        match self {
+            CompressionLevel::LOW => 3,
+            CompressionLevel::MID => 9,
+            CompressionLevel::HIGH => 15,
+            CompressionLevel::MAX => 22,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ErrorKind {}
 
@@ -103,16 +128,24 @@ impl BackupManager {
         }
     }
 
-    pub fn from_repo(path: &Path, password: &str) -> Self {
+    pub fn retention_policy(&mut self, retention_policy: RetentionPolicy) {
+        self.settings.retention_policy = retention_policy;
+    }
+
+    pub fn compression_level(&mut self, level: CompressionLevel) {
+        self.settings.compression_level = level;
+    }
+
+    pub fn from_repo(path: &Path, password: &str) -> std::io::Result<Self> {
         if !path.exists() {
             eprintln!(r#"Error: Repo '{}' does not exist"#, path.to_str().unwrap());
             exit(1);
         }
 
         let mut manager = BackupManager::new(path, password);
-        manager.init_meta();
+        manager.init_meta()?;
 
-        manager
+        Ok(manager)
     }
 
     fn load_json<T: DeserializeOwned>(&self, path: &Path) -> std::io::Result<T> {
