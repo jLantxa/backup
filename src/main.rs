@@ -15,14 +15,13 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+
 mod backup;
 mod hashing;
 mod io;
-mod meta;
 mod storage;
 
-fn main() {
-    let _args: Vec<String> = std::env::args().collect();
 
-    todo!();
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
 }

@@ -17,7 +17,22 @@
 
 use sha2::{Digest, Sha256};
 
+/// Calculate the SHA-256 hash of a stream of bytes.
 pub fn calculate_hash(data: &[u8]) -> String {
     let hash = Sha256::digest(data);
     format!("{:x}", hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test the hashing function to ensure it produces consistent results.
+    #[test]
+    fn test_calculate_hash() {
+        let data = b"Lorem ipsum dolor sit amet";
+        let expected_hash = "16aba5393ad72c0041f5600ad3c2c52ec437a2f0c7fc08fadfc3c0fe9641d7a3";
+        let hash = calculate_hash(data);
+        assert_eq!(hash, expected_hash);
+    }
 }
