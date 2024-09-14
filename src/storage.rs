@@ -15,55 +15,68 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-use crate::hashing;
-use crate::{io::SecureStorage, meta::FileMetadata};
-use std::fs::File;
-use std::io::Read;
-use std::path::Path;
+use crate::{backup::FileMetadata, hashing, io::SecureStorage};
+use std::{fs::File, io::Read, path::Path};
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 
+pub struct StorageResult {
+    pub chunk_hashes: Vec<String>,
+    pub bytes_read: usize,
+    pub bytes_stored: usize,
+}
+
+/// Store a file in the repository.
 pub fn store_file(
     src_path: &Path,
     repo_path: &Path,
     secure_storage: &SecureStorage,
     compression_level: i32,
-) -> std::io::Result<f64> {
+) -> std::io::Result<StorageResult> {
     let mut file = File::open(src_path)?;
     let mut buffer = [0_u8; CHUNK_SIZE];
 
-    let mut bytes_compressed: f64 = 0.0;
-    let mut bytes_total: f64 = 0.0;
+    let mut chunks = Vec::new();
+    let (mut bytes_total, mut bytes_stored): (usize, usize) = (0, 0);
 
-    loop {
-        let bytes_read = file.read(&mut buffer)?;
+    while let Ok(bytes_read) = file.read(&mut buffer) {
         if bytes_read == 0 {
             break;
         }
 
         let chunk = &buffer[..bytes_read];
 
+        // Skip storing chunks filled with zeros
         if chunk.iter().all(|&b| b == 0) {
             continue;
         }
 
         let hash_str = hashing::calculate_hash(chunk);
-        let dir_name = &hash_str[0..2];
-        let file_name = &hash_str[2..];
+        let (dir_name, file_name) = (&hash_str[0..2], &hash_str[2..]);
 
-        let chunk_dir = repo_path.join(dir_name);
-        let chunk_path = chunk_dir.join(file_name);
+        let chunk_path = repo_path.join(dir_name).join(file_name);
+        chunks.push(hash_str.clone());
 
-        std::fs::create_dir_all(&chunk_dir)?;
-        let ratio = secure_storage.save_to_file(&chunk_path, &chunk.to_vec(), compression_level)?;
-        bytes_compressed += chunk.len() as f64 / ratio;
-        bytes_total += chunk.len() as f64;
+        // Create directory and store the chunk if it doesn't exist
+        if !chunk_path.exists() {
+            std::fs::create_dir_all(repo_path.join(dir_name))?;
+            let bytes_processed =
+                secure_storage.save_to_file(&chunk_path, chunk, compression_level)?;
+            bytes_stored += bytes_processed;
+        }
+
+        bytes_total += chunk.len();
     }
 
-    let file_compression_ratio = bytes_total / bytes_compressed;
-    Ok(file_compression_ratio)
+    Ok(StorageResult {
+        chunk_hashes: chunks,
+        bytes_read: bytes_total,
+        bytes_stored,
+    })
 }
 
+/// Restore a file from the repository
 pub fn restore_file(file: &FileMetadata, secure_storage: &SecureStorage) -> std::io::Result<()> {
+    // Placeholder function - To be implemented
     todo!()
 }
