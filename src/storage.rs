@@ -20,7 +20,7 @@ use std::{fs::File, io::Read, path::Path};
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 
-pub struct StoredResult {
+pub struct StorageResult {
     pub chunk_hashes: Vec<String>,
     pub bytes_read: usize,
     pub bytes_stored: usize,
@@ -32,7 +32,7 @@ pub fn store_file(
     repo_path: &Path,
     secure_storage: &SecureStorage,
     compression_level: i32,
-) -> std::io::Result<StoredResult> {
+) -> std::io::Result<StorageResult> {
     let mut file = File::open(src_path)?;
     let mut buffer = [0_u8; CHUNK_SIZE];
 
@@ -68,7 +68,7 @@ pub fn store_file(
         bytes_total += chunk.len();
     }
 
-    Ok(StoredResult {
+    Ok(StorageResult {
         chunk_hashes: chunks,
         bytes_read: bytes_total,
         bytes_stored,

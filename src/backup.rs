@@ -251,8 +251,20 @@ impl Repo {
 
     /// Backup a directory to the repo.
     pub fn backup(&mut self, src_dir: &Path) -> Result<(), Error> {
-        let is_first_snapshot = self.refs.snapshots.is_empty();
-        let snapshot_kind = if is_first_snapshot {
+        let snapshot_kind = self.determine_snapshot_kind();
+        let source_files = Self::get_all_files_recursive(src_dir);
+        let last_snapshot_files = self.get_last_snapshot_files()?;
+        let compression_level = self.config.compression_level.to_i32();
+
+        let snapshot_files =
+            self.process_source_files(source_files, &last_snapshot_files, compression_level)?;
+
+        let snapshot_id = self.create_snapshot(snapshot_kind, snapshot_files)?;
+        Ok(())
+    }
+
+    fn determine_snapshot_kind(&self) -> SnapshotKind {
+        if self.refs.snapshots.is_empty() {
             SnapshotKind::Full
         } else {
             let num_deltas = self
@@ -267,75 +279,105 @@ impl Repo {
             } else {
                 SnapshotKind::Full
             }
-        };
+        }
+    }
 
-        let source_files = Self::get_all_files_recursive(src_dir);
-        let last_snapshot_files = match self.refs.snapshots.last() {
-            None => HashMap::new(),
-            Some((id, _, _)) => self.calculate_status_at_snapshot(id)?,
-        };
+    fn get_last_snapshot_files(&self) -> Result<HashMap<String, FileMetadata>, Error> {
+        match self.refs.snapshots.last() {
+            None => Ok(HashMap::new()),
+            Some((id, _, _)) => self.calculate_status_at_snapshot(id),
+        }
+    }
 
-        let compression_level = self.config.compression_level.to_i32();
+    fn process_source_files(
+        &self,
+        source_files: Vec<PathBuf>,
+        last_snapshot_files: &HashMap<String, FileMetadata>,
+        compression_level: i32,
+    ) -> Result<HashMap<String, FileMetadata>, Error> {
+        let mut snapshot_files = HashMap::new();
 
-        let mut snapshot_files = HashMap::<String, FileMetadata>::new();
         for source_file in source_files {
-            let storage_result = storage::store_file(
-                &source_file,
-                &self.paths.data,
-                &self.secure_storage,
-                compression_level,
-            )
-            .map_err(|_| Error::new(ErrorKind::StorageError, "Could not store file"))?;
-
-            let stored_hashes = &storage_result.chunk_hashes;
-            let file_meta = &last_snapshot_files.get(source_file.to_string_lossy().as_ref());
-
-            let has_changed = match file_meta {
-                None => true,
-                Some(meta) => {
-                    let file_delta = &file_meta.unwrap().delta;
-                    match file_delta {
-                        Delta::Deleted => true,
-                        Delta::Chunks(chunks) => *chunks != *storage_result.chunk_hashes,
-                    }
-                }
-            };
+            let storage_result = self.store_and_compress_file(&source_file, compression_level)?;
+            let has_changed =
+                self.file_has_changed(&source_file, &storage_result, last_snapshot_files);
 
             if has_changed {
                 let file_metadata = FileMetadata {
                     path: source_file.to_string_lossy().to_string(),
                     delta: Delta::Chunks(storage_result.chunk_hashes),
-                    file_size: 0,
-                    modify_date: String::from("todo"),
+                    file_size: 0,                      // TODO: Update with real size
+                    modify_date: String::from("todo"), // TODO: Update with real modify date
                 };
                 snapshot_files.insert(source_file.to_string_lossy().to_string(), file_metadata);
             }
         }
 
+        Ok(snapshot_files)
+    }
+
+    fn store_and_compress_file(
+        &self,
+        source_file: &PathBuf,
+        compression_level: i32,
+    ) -> Result<storage::StorageResult, Error> {
+        storage::store_file(
+            source_file,
+            &self.paths.data,
+            &self.secure_storage,
+            compression_level,
+        )
+        .map_err(|_| Error::new(ErrorKind::StorageError, "Could not store file"))
+    }
+
+    fn file_has_changed(
+        &self,
+        source_file: &PathBuf,
+        storage_result: &storage::StorageResult,
+        last_snapshot_files: &HashMap<String, FileMetadata>,
+    ) -> bool {
+        let file_meta = last_snapshot_files.get(source_file.to_string_lossy().as_ref());
+
+        match file_meta {
+            None => true,
+            Some(meta) => match &meta.delta {
+                Delta::Deleted => true,
+                Delta::Chunks(chunks) => *chunks != storage_result.chunk_hashes,
+            },
+        }
+    }
+
+    fn create_snapshot(
+        &mut self,
+        snapshot_kind: SnapshotKind,
+        snapshot_files: HashMap<String, FileMetadata>,
+    ) -> Result<String, Error> {
         let snapshot_id = self.refs.snapshots.len().to_string();
-        let previous_snapshot_ref = self.refs.snapshots.last();
-        let previous_snapshot_id = match previous_snapshot_ref {
-            Some((id, _, _)) => Some(id.clone()),
-            None => None,
-        };
+        let previous_snapshot_id = self.refs.snapshots.last().map(|(id, _, _)| id.clone());
+
         let snapshot = Snapshot {
             id: snapshot_id.clone(),
             kind: snapshot_kind.clone(),
-            timestamp: "timestamp".to_string(),
+            timestamp: "timestamp".to_string(), // TODO: Update with real timestamp
             previous_snapshot_id,
             files: snapshot_files,
         };
-        let snapshot_meta_path = &self.paths.snapshots.join(&snapshot_id);
+
+        let snapshot_meta_path = self.paths.snapshots.join(&snapshot_id);
         self.secure_storage
-            .save_json(&snapshot_meta_path, &snapshot, compression_level);
+            .save_json(
+                &snapshot_meta_path,
+                &snapshot,
+                self.config.compression_level.to_i32(),
+            )
+            .map_err(|_| Error::new(ErrorKind::StorageError, "Could not store snapshot metadata"));
+
         self.refs
             .snapshots
             .push((snapshot_id.clone(), snapshot_kind, "timestamp".to_string()));
         self.persist_meta();
 
-        println!("{:?}", snapshot);
-
-        Ok(())
+        Ok(snapshot_id)
     }
 
     /// Restore a snapshot.
