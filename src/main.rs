@@ -15,13 +15,49 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use core::panic;
+use std::path::Path;
+
+use backup::Repo;
 
 mod backup;
 mod hashing;
 mod io;
 mod storage;
 
+enum Action {
+    CreateNew,
+    Backup,
+    Restore,
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+
+    let action = match args[1].as_str() {
+        "new" => Action::CreateNew,
+        "delta" => Action::Backup,
+        "restore" => Action::Restore,
+        _ => panic!("Unexpected action"),
+    };
+
+    let repo_path = Path::new(&args[2]).to_owned();
+    let src_path = Path::new(&args[3]).to_owned();
+    let restore_path = Path::new(&args[4]).to_owned();
+    let password = "password";
+
+    match action {
+        Action::CreateNew => {
+            let mut repo = Repo::new(&repo_path, &password).unwrap();
+            repo.backup(&src_path).unwrap();
+        }
+        Action::Backup => {
+            let mut repo = Repo::from_existing(&repo_path, &password).unwrap();
+            repo.backup(&src_path).unwrap();
+        }
+        Action::Restore => {
+            let repo = Repo::from_existing(&repo_path, &password).unwrap();
+            repo.restore_last_snapshot(&restore_path).unwrap();
+        }
+    }
 }

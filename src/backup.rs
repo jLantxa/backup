@@ -15,14 +15,12 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-use std::{
-    collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
-};
-
-use serde::{Deserialize, Serialize};
-
 use crate::{io::SecureStorage, storage};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::io;
+use std::path::{Path, PathBuf};
+use thiserror::Error;
 
 /// Type of snapshot
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -54,7 +52,6 @@ impl Default for CompressionLevel {
 }
 
 impl CompressionLevel {
-    /// Convert CompressionLevel to integer.
     fn to_i32(&self) -> i32 {
         match self {
             CompressionLevel::LOW => 3,
@@ -65,11 +62,7 @@ impl CompressionLevel {
     }
 }
 
-const DATA_DIR: &str = "data";
-const SNAPSHOTS_DIR: &str = "snapshots";
-const REFS_PATH: &str = "refs";
-const CONFIG_PATH: &str = "config";
-
+/// Paths structure for repository directories
 struct Paths {
     pub config: PathBuf,
     pub refs: PathBuf,
@@ -96,45 +89,60 @@ pub struct Snapshot {
     pub files: HashMap<String, FileMetadata>,
 }
 
-/// Quick reference of all snapshots in the repo.
+/// Reference for all snapshots in the repo.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SnapshotsRef {
     pub snapshots: Vec<(String, SnapshotKind, String)>, // (id, kind, timestamp)
 }
 
 /// Repository settings.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct Settings {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Config {
     pub retention_policy: RetentionPolicy,
     pub compression_level: CompressionLevel,
+    pub max_consecutive_deltas: usize,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            retention_policy: Default::default(),
+            compression_level: Default::default(),
+            max_consecutive_deltas: 10,
+        }
+    }
+}
+
+/// Delta types for file changes in a snapshot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Delta {
     Chunks(Vec<String>),
     Deleted,
 }
 
-#[derive(Debug)]
-pub enum ErrorKind {
+/// Custom error types for repository operations.
+#[derive(Error, Debug)]
+pub enum RepoError {
+    #[error("Repository initialization failed")]
     RepoInitError,
-    MetadataError,
-    StorageError,
-}
 
-#[derive(Debug)]
-pub struct Error {
-    pub kind: ErrorKind,
-    pub error: String,
-}
+    #[error("Failed to load metadata: {0}")]
+    MetadataError(String),
 
-impl Error {
-    pub fn new(kind: ErrorKind, error: &str) -> Self {
-        Self {
-            kind,
-            error: String::from(error),
-        }
-    }
+    #[error("Storage error: {0}")]
+    StorageError(String),
+
+    #[error("File system error")]
+    FileSystemError(#[from] std::io::Error),
+
+    #[error("Invalid snapshot ID: {0}")]
+    InvalidSnapshotId(String),
+
+    #[error("Failed to store file: {0}")]
+    StoreFileError(String),
+
+    #[error("Unexpected error: {0}")]
+    Unknown(String),
 }
 
 /// Repo handles backup repository operations.
@@ -142,124 +150,147 @@ pub struct Repo {
     repo_path: PathBuf,
     paths: Paths,
     secure_storage: SecureStorage,
-    config: Settings,
+    config: Config,
     refs: SnapshotsRef,
 }
 
 impl Repo {
-    pub fn new(path: &Path, password: &str) -> Result<Self, Error> {
+    /// Create a new repository
+    pub fn new(path: &Path, password: &str) -> Result<Self, RepoError> {
         let secure_storage = SecureStorage {};
         let repo_path = path.to_path_buf();
-        let paths = Paths {
-            config: repo_path.join(CONFIG_PATH),
-            refs: repo_path.join(REFS_PATH),
-            snapshots: repo_path.join(SNAPSHOTS_DIR),
-            data: repo_path.join(DATA_DIR),
-        };
+        let paths = Self::build_paths(&repo_path);
 
-        Self::create_dirs(&repo_path);
+        Self::create_dirs(&repo_path)?;
 
         let repo = Self {
-            repo_path: repo_path,
+            repo_path,
             paths,
             secure_storage,
             config: Default::default(),
             refs: Default::default(),
         };
 
-        repo.persist_meta();
+        repo.persist_meta()?;
 
         Ok(repo)
     }
 
-    pub fn from_existing(path: &Path, password: &str) -> Result<Self, Error> {
+    /// Load an existing repository
+    pub fn from_existing(path: &Path, password: &str) -> Result<Self, RepoError> {
         let secure_storage = SecureStorage {};
         let repo_path = path.to_path_buf();
-        let paths = Paths {
-            config: repo_path.join(CONFIG_PATH),
-            refs: repo_path.join(REFS_PATH),
-            snapshots: repo_path.join(SNAPSHOTS_DIR),
-            data: repo_path.join(DATA_DIR),
-        };
+        let paths = Self::build_paths(&repo_path);
 
-        let config: Settings = secure_storage.load_json(&paths.config).unwrap();
-        let refs: SnapshotsRef = secure_storage.load_json(&paths.refs).unwrap();
+        let config: Config = secure_storage
+            .load_json(&paths.config)
+            .map_err(|e| RepoError::MetadataError(format!("Failed to load config: {}", e)))?;
+
+        let refs: SnapshotsRef = secure_storage
+            .load_json(&paths.refs)
+            .map_err(|e| RepoError::MetadataError(format!("Failed to load refs: {}", e)))?;
 
         Ok(Self {
-            repo_path: repo_path,
+            repo_path,
             paths,
             secure_storage,
-            config: config,
-            refs: refs,
+            config,
+            refs,
         })
     }
 
-    /// Create the repository chunks directory.
-    fn create_dirs(path: &Path) -> std::io::Result<()> {
-        let data_path = path.join(DATA_DIR);
-        std::fs::create_dir_all(&data_path);
+    fn build_paths(repo_path: &Path) -> Paths {
+        Paths {
+            config: repo_path.join("config"),
+            refs: repo_path.join("refs"),
+            snapshots: repo_path.join("snapshots"),
+            data: repo_path.join("data"),
+        }
+    }
 
-        let snapshots_path = path.join(SNAPSHOTS_DIR);
-        std::fs::create_dir_all(&snapshots_path);
+    /// Create repository directories
+    fn create_dirs(path: &Path) -> io::Result<()> {
+        let data_path = path.join("data");
+        let snapshots_path = path.join("snapshots");
+
+        std::fs::create_dir_all(&data_path)?;
+        std::fs::create_dir_all(&snapshots_path)?;
 
         (0x00..=0xff)
             .map(|i| std::fs::create_dir_all(data_path.join(format!("{:02x}", i))))
             .collect::<Result<_, _>>()
     }
 
-    /// Initialize all metadata.
-    fn init_meta(&mut self) -> std::io::Result<()> {
-        self.config = self.secure_storage.load_json(&self.paths.config)?;
-        self.refs = self.secure_storage.load_json(&self.paths.snapshots)?;
-        Ok(())
-    }
-
-    /// Save metadata.
-    fn persist_meta(&self) -> std::io::Result<()> {
+    /// Persist repository metadata to disk
+    fn persist_meta(&self) -> Result<(), RepoError> {
         let compression_level = self.config.compression_level.to_i32();
         self.secure_storage
-            .save_json(&self.paths.config, &self.config, compression_level)?;
+            .save_json(&self.paths.config, &self.config, compression_level)
+            .map_err(|e| RepoError::StorageError(format!("Failed to save config: {}", e)))?;
+
         self.secure_storage
-            .save_json(&self.paths.refs, &self.refs, compression_level)?;
+            .save_json(&self.paths.refs, &self.refs, compression_level)
+            .map_err(|e| RepoError::StorageError(format!("Failed to save refs: {}", e)))?;
+
         Ok(())
     }
 
-    /// Set the repo retention policy.
-    pub fn retention_policy(&mut self, retention_policy: RetentionPolicy) {
-        self.config.retention_policy = retention_policy;
-    }
-
-    /// Set the repo compression level.
-    pub fn compression_level(&mut self, level: CompressionLevel) {
-        self.config.compression_level = level;
-    }
-
-    fn get_all_files_recursive(directory: &Path) -> Vec<PathBuf> {
-        let mut files = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(directory) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    files.push(path);
-                } else if path.is_dir() {
-                    files.extend(Self::get_all_files_recursive(&path));
-                }
-            }
-        }
-        files
-    }
-
-    /// Backup a directory to the repo.
-    pub fn backup(&mut self, src_dir: &Path) -> Result<(), Error> {
+    /// Backup a directory to the repository.
+    pub fn backup(&mut self, src_dir: &Path) -> Result<(), RepoError> {
         let snapshot_kind = self.determine_snapshot_kind();
-        let source_files = Self::get_all_files_recursive(src_dir);
-        let last_snapshot_files = self.get_last_snapshot_files()?;
+
+        let source_files = Self::get_all_files_recursive(src_dir)?;
+
+        let last_snapshot_files = self.get_last_snapshot_files().map_err(|e| {
+            RepoError::MetadataError(format!("Failed to retrieve last snapshot files: {}", e))
+        })?;
+
         let compression_level = self.config.compression_level.to_i32();
 
-        let snapshot_files =
-            self.process_source_files(source_files, &last_snapshot_files, compression_level)?;
+        let snapshot_files = self
+            .process_source_files(
+                src_dir,
+                source_files,
+                &last_snapshot_files,
+                compression_level,
+            )
+            .map_err(|e| {
+                RepoError::StoreFileError(format!("Failed to process source files: {}", e))
+            })?;
 
-        let snapshot_id = self.create_snapshot(snapshot_kind, snapshot_files)?;
+        self.create_snapshot(snapshot_kind, snapshot_files)
+            .map_err(|e| RepoError::StorageError(format!("Failed to create snapshot: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Restore a snapshot from the repository.
+    pub fn restore_snapshot(&self, snapshot_id: &str, dst_path: &Path) -> Result<(), RepoError> {
+        let files = self
+            .calculate_status_at_snapshot(snapshot_id)
+            .map_err(|_| {
+                RepoError::InvalidSnapshotId(format!("Failed to restore snapshot: {}", snapshot_id))
+            })?;
+
+        for (repo_filename, file_metadata) in files {
+            let file_dst_path = dst_path.join(&repo_filename);
+            storage::restore_file(
+                &file_metadata,
+                &self.repo_path,
+                &file_dst_path,
+                &self.secure_storage,
+            )
+            .map_err(|e| RepoError::StoreFileError(format!("Failed to restore file: {}", e)))?;
+        }
+
+        Ok(())
+    }
+
+    pub fn restore_last_snapshot(&self, dst_path: &Path) -> Result<(), RepoError> {
+        if let Some((id, _, _)) = self.refs.snapshots.last() {
+            return self.restore_snapshot(id, dst_path);
+        }
+
         Ok(())
     }
 
@@ -274,7 +305,8 @@ impl Repo {
                 .rev()
                 .take_while(|(_, kind, _)| *kind == SnapshotKind::Delta)
                 .count();
-            if num_deltas < 10 {
+
+            if num_deltas < self.config.max_consecutive_deltas {
                 SnapshotKind::Delta
             } else {
                 SnapshotKind::Full
@@ -282,7 +314,7 @@ impl Repo {
         }
     }
 
-    fn get_last_snapshot_files(&self) -> Result<HashMap<String, FileMetadata>, Error> {
+    fn get_last_snapshot_files(&self) -> Result<HashMap<String, FileMetadata>, RepoError> {
         match self.refs.snapshots.last() {
             None => Ok(HashMap::new()),
             Some((id, _, _)) => self.calculate_status_at_snapshot(id),
@@ -291,25 +323,26 @@ impl Repo {
 
     fn process_source_files(
         &self,
+        src_dir: &Path,
         source_files: Vec<PathBuf>,
         last_snapshot_files: &HashMap<String, FileMetadata>,
         compression_level: i32,
-    ) -> Result<HashMap<String, FileMetadata>, Error> {
+    ) -> Result<HashMap<String, FileMetadata>, RepoError> {
         let mut snapshot_files = HashMap::new();
 
         for source_file in source_files {
+            let path_relative_path = source_file.strip_prefix(src_dir).unwrap().to_owned();
             let storage_result = self.store_and_compress_file(&source_file, compression_level)?;
-            let has_changed =
-                self.file_has_changed(&source_file, &storage_result, last_snapshot_files);
-
-            if has_changed {
-                let file_metadata = FileMetadata {
-                    path: source_file.to_string_lossy().to_string(),
-                    delta: Delta::Chunks(storage_result.chunk_hashes),
-                    file_size: 0,                      // TODO: Update with real size
-                    modify_date: String::from("todo"), // TODO: Update with real modify date
-                };
-                snapshot_files.insert(source_file.to_string_lossy().to_string(), file_metadata);
+            if self.file_has_changed(src_dir, &source_file, &storage_result, last_snapshot_files) {
+                snapshot_files.insert(
+                    path_relative_path.to_string_lossy().to_string(),
+                    FileMetadata {
+                        path: path_relative_path.to_string_lossy().to_string(),
+                        delta: Delta::Chunks(storage_result.chunk_hashes),
+                        file_size: 0,                      // TODO: Add file size
+                        modify_date: String::from("todo"), // TODO: Add modify date
+                    },
+                );
             }
         }
 
@@ -320,25 +353,25 @@ impl Repo {
         &self,
         source_file: &PathBuf,
         compression_level: i32,
-    ) -> Result<storage::StorageResult, Error> {
+    ) -> Result<storage::StorageResult, RepoError> {
         storage::store_file(
             source_file,
             &self.paths.data,
             &self.secure_storage,
             compression_level,
         )
-        .map_err(|_| Error::new(ErrorKind::StorageError, "Could not store file"))
+        .map_err(|e| RepoError::StoreFileError(format!("Could not store file: {}", e)))
     }
 
     fn file_has_changed(
         &self,
+        src_dir: &Path,
         source_file: &PathBuf,
         storage_result: &storage::StorageResult,
         last_snapshot_files: &HashMap<String, FileMetadata>,
     ) -> bool {
-        let file_meta = last_snapshot_files.get(source_file.to_string_lossy().as_ref());
-
-        match file_meta {
+        let repo_relative_path = source_file.strip_prefix(src_dir).unwrap();
+        match last_snapshot_files.get(repo_relative_path.to_string_lossy().as_ref()) {
             None => true,
             Some(meta) => match &meta.delta {
                 Delta::Deleted => true,
@@ -351,14 +384,14 @@ impl Repo {
         &mut self,
         snapshot_kind: SnapshotKind,
         snapshot_files: HashMap<String, FileMetadata>,
-    ) -> Result<String, Error> {
+    ) -> Result<String, RepoError> {
         let snapshot_id = self.refs.snapshots.len().to_string();
         let previous_snapshot_id = self.refs.snapshots.last().map(|(id, _, _)| id.clone());
 
         let snapshot = Snapshot {
             id: snapshot_id.clone(),
             kind: snapshot_kind.clone(),
-            timestamp: "timestamp".to_string(), // TODO: Update with real timestamp
+            timestamp: "timestamp".to_string(), // TODO: Add real timestamp
             previous_snapshot_id,
             files: snapshot_files,
         };
@@ -370,44 +403,72 @@ impl Repo {
                 &snapshot,
                 self.config.compression_level.to_i32(),
             )
-            .map_err(|_| Error::new(ErrorKind::StorageError, "Could not store snapshot metadata"));
+            .map_err(|e| RepoError::StorageError(format!("Failed to save snapshot: {}", e)))?;
 
-        self.refs
-            .snapshots
-            .push((snapshot_id.clone(), snapshot_kind, "timestamp".to_string()));
-        self.persist_meta();
+        self.refs.snapshots.push((
+            snapshot_id.clone(),
+            snapshot_kind,
+            "timestamp".to_string(), // TODO: Add real timestamp
+        ));
 
+        self.persist_meta()?;
         Ok(snapshot_id)
     }
 
-    /// Restore a snapshot.
-    pub fn restore_snapshot(&self, snapshot_id: &str, dst_path: &Path) -> Result<(), Error> {
-        todo!()
+    /// Retrieve all files recursively from a directory.
+    fn get_all_files_recursive(directory: &Path) -> Result<Vec<PathBuf>, RepoError> {
+        let mut files = Vec::new();
+        let entries = std::fs::read_dir(directory).map_err(|e| RepoError::FileSystemError(e))?;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                files.push(path);
+            } else if path.is_dir() {
+                files.extend(Self::get_all_files_recursive(&path)?);
+            }
+        }
+
+        Ok(files)
     }
 
-    /// Cleanup the repository.
-    pub fn cleanup(&mut self) -> Result<(), Error> {
-        let mut referenced_chunks = HashSet::new();
+    fn calculate_status_at_snapshot(
+        &self,
+        snapshot_id: &str,
+    ) -> Result<HashMap<String, FileMetadata>, RepoError> {
+        let segment = self
+            .get_last_delta_segment_from_snapshot(snapshot_id)
+            .ok_or_else(|| {
+                RepoError::InvalidSnapshotId(format!("Snapshot ID not found: {}", snapshot_id))
+            })?;
 
-        for (snapshot_id, _, _) in &self.refs.snapshots {
-            let snapshot_path = &self.paths.snapshots.join(snapshot_id);
+        let mut files = HashMap::new();
+
+        for snapshot_id in segment {
             let snapshot: Snapshot = self
                 .secure_storage
-                .load_json(&snapshot_path)
-                .map_err(|_| Error::new(ErrorKind::MetadataError, "Could not load snapshot"))?;
+                .load_json(&self.paths.snapshots.join(&snapshot_id))
+                .map_err(|e| RepoError::MetadataError(format!("Failed to load snapshot: {}", e)))?;
 
-            for file_meta in snapshot.files.values() {
-                if let Delta::Chunks(chunks) = &file_meta.delta {
-                    referenced_chunks.extend(chunks.iter().cloned());
+            for (filename, file_metadata) in snapshot.files {
+                match file_metadata.delta {
+                    Delta::Deleted => {
+                        files.remove(&filename);
+                    }
+                    _ => {
+                        files.insert(filename, file_metadata);
+                    }
                 }
             }
         }
 
-        // To-Do: Iterate over all stored chunks and remove those not in the set.
-        todo!()
+        Ok(files)
     }
 
-    /// Return a sequence of snapshot IDs from the last full snapshot or up to a specific snapshot.
+    fn get_last_delta_segment_from_snapshot(&self, segment_id: &str) -> Option<Vec<String>> {
+        self.get_delta_segment(|_, kind| *kind == SnapshotKind::Full)
+    }
+
     fn get_delta_segment<F>(&self, condition: F) -> Option<Vec<String>>
     where
         F: Fn(&String, &SnapshotKind) -> bool,
@@ -426,49 +487,5 @@ impl Repo {
         } else {
             Some(segment.into_iter().rev().collect())
         }
-    }
-
-    /// Return a sequence of snapshot IDs from the last full snapshot to a specific snapshot.
-    fn get_last_delta_segment_from_snapshot(&self, segment_id: &str) -> Option<Vec<String>> {
-        self.get_delta_segment(|id, kind| kind == &SnapshotKind::Full)
-    }
-
-    /// Return a sequence of snapshot IDs from the last full snapshot.
-    fn get_last_delta_segment(&self) -> Option<Vec<String>> {
-        self.refs
-            .snapshots
-            .last()
-            .and_then(|(id, _, _)| self.get_last_delta_segment_from_snapshot(id))
-    }
-
-    /// Compute the status of the file system at a specific snapshot.
-    fn calculate_status_at_snapshot(
-        &self,
-        snapshot_id: &str,
-    ) -> Result<HashMap<String, FileMetadata>, Error> {
-        let Some(segment) = self.get_last_delta_segment_from_snapshot(snapshot_id) else {
-            return Err(Error::new(
-                ErrorKind::MetadataError,
-                "Snapshot id not found",
-            ));
-        };
-
-        let mut files = HashMap::new();
-
-        for snapshot_id in segment {
-            let snapshot: Snapshot = self
-                .secure_storage
-                .load_json(&self.paths.snapshots.join(&snapshot_id))
-                .map_err(|_| Error::new(ErrorKind::MetadataError, "Could not load snapshot"))?;
-            for (filename, file_metadata) in snapshot.files.iter() {
-                if matches!(file_metadata.delta, Delta::Deleted) {
-                    files.remove(filename);
-                } else {
-                    files.insert(filename.clone(), file_metadata.clone());
-                }
-            }
-        }
-
-        Ok(files)
     }
 }
