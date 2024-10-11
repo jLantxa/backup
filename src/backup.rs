@@ -16,6 +16,7 @@
  */
 
 use crate::{io::SecureStorage, storage};
+use chrono::{Local, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io;
@@ -84,7 +85,7 @@ pub struct FileMetadata {
 pub struct Snapshot {
     pub id: String,
     pub kind: SnapshotKind,
-    pub timestamp: String,
+    pub utc_timestamp: i64,
     pub previous_snapshot_id: Option<String>,
     pub files: HashMap<String, FileMetadata>,
 }
@@ -92,7 +93,7 @@ pub struct Snapshot {
 /// Reference for all snapshots in the repo.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SnapshotsRef {
-    pub snapshots: Vec<(String, SnapshotKind, String)>, // (id, kind, timestamp)
+    pub snapshots: Vec<(String, SnapshotKind, i64)>, // (id, kind, timestamp)
 }
 
 /// Repository settings.
@@ -272,6 +273,8 @@ impl Repo {
                 RepoError::InvalidSnapshotId(format!("Failed to restore snapshot: {}", snapshot_id))
             })?;
 
+        println!("{:?}", files);
+
         for (repo_filename, file_metadata) in files {
             let file_dst_path = dst_path.join(&repo_filename);
             storage::restore_file(
@@ -387,11 +390,12 @@ impl Repo {
     ) -> Result<String, RepoError> {
         let snapshot_id = self.refs.snapshots.len().to_string();
         let previous_snapshot_id = self.refs.snapshots.last().map(|(id, _, _)| id.clone());
+        let utc_timestamp = Self::get_utc_timestamp();
 
         let snapshot = Snapshot {
             id: snapshot_id.clone(),
             kind: snapshot_kind.clone(),
-            timestamp: "timestamp".to_string(), // TODO: Add real timestamp
+            utc_timestamp: utc_timestamp,
             previous_snapshot_id,
             files: snapshot_files,
         };
@@ -405,11 +409,11 @@ impl Repo {
             )
             .map_err(|e| RepoError::StorageError(format!("Failed to save snapshot: {}", e)))?;
 
-        self.refs.snapshots.push((
-            snapshot_id.clone(),
-            snapshot_kind,
-            "timestamp".to_string(), // TODO: Add real timestamp
-        ));
+        self.refs
+            .snapshots
+            .push((snapshot_id.clone(), snapshot_kind, utc_timestamp));
+
+        println!("{:?}", snapshot);
 
         self.persist_meta()?;
         Ok(snapshot_id)
@@ -487,5 +491,28 @@ impl Repo {
         } else {
             Some(segment.into_iter().rev().collect())
         }
+    }
+
+    pub fn list_snapshots(&self) -> Vec<(String, SnapshotKind, String)> {
+        let mut snapshots = Vec::new();
+
+        for (id, kind, utc_timestamp) in &self.refs.snapshots {
+            let local_timestamp = Self::utc_to_local_format(*utc_timestamp);
+            snapshots.push((id.clone(), kind.clone(), local_timestamp));
+        }
+
+        snapshots
+    }
+
+    /// Get the current UTC timestamp in Unix time (seconds since the epoch).
+    fn get_utc_timestamp() -> i64 {
+        Utc::now().timestamp()
+    }
+
+    /// Convert a given UTC timestamp to a human-readable time in the user's local timezone.
+    fn utc_to_local_format(utc_timestamp: i64) -> String {
+        let local_time = Local.timestamp_opt(utc_timestamp, 0).unwrap();
+
+        local_time.format("%Y-%m-%d %H:%M:%S").to_string()
     }
 }

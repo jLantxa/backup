@@ -18,7 +18,7 @@
 use core::panic;
 use std::path::Path;
 
-use backup::Repo;
+use backup::{Repo, Snapshot};
 
 mod backup;
 mod hashing;
@@ -28,7 +28,9 @@ mod storage;
 enum Action {
     CreateNew,
     Backup,
-    Restore,
+    RestoreLast,
+    Restore(String),
+    List,
 }
 
 fn main() {
@@ -37,7 +39,9 @@ fn main() {
     let action = match args[1].as_str() {
         "new" => Action::CreateNew,
         "delta" => Action::Backup,
-        "restore" => Action::Restore,
+        "restorelast" => Action::RestoreLast,
+        "restoren" => Action::Restore(args[5].clone()),
+        "list" => Action::List,
         _ => panic!("Unexpected action"),
     };
 
@@ -55,9 +59,20 @@ fn main() {
             let mut repo = Repo::from_existing(&repo_path, &password).unwrap();
             repo.backup(&src_path).unwrap();
         }
-        Action::Restore => {
+        Action::RestoreLast => {
             let repo = Repo::from_existing(&repo_path, &password).unwrap();
             repo.restore_last_snapshot(&restore_path).unwrap();
+        }
+        Action::Restore(id) => {
+            println!("{}", id);
+            let repo = Repo::from_existing(&repo_path, &password).unwrap();
+            repo.restore_snapshot(&id, &restore_path).unwrap();
+        }
+        Action::List => {
+            let repo = Repo::from_existing(&repo_path, &password).unwrap();
+            let snapshots = repo.list_snapshots();
+
+            println!("{:?}", snapshots);
         }
     }
 }
