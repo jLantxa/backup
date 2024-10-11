@@ -440,11 +440,9 @@ impl Repo {
         &self,
         snapshot_id: &str,
     ) -> Result<HashMap<String, FileMetadata>, RepoError> {
-        let segment = self
-            .get_last_delta_segment_from_snapshot(snapshot_id)
-            .ok_or_else(|| {
-                RepoError::InvalidSnapshotId(format!("Snapshot ID not found: {}", snapshot_id))
-            })?;
+        let segment = self.get_delta_segment(snapshot_id).ok_or_else(|| {
+            RepoError::InvalidSnapshotId(format!("Snapshot ID not found: {}", snapshot_id))
+        })?;
 
         let mut files = HashMap::new();
 
@@ -469,19 +467,18 @@ impl Repo {
         Ok(files)
     }
 
-    fn get_last_delta_segment_from_snapshot(&self, segment_id: &str) -> Option<Vec<String>> {
-        self.get_delta_segment(|_, kind| *kind == SnapshotKind::Full)
-    }
+    fn get_delta_segment(&self, snapshot_id: &str) -> Option<Vec<String>> {
+        let index = self
+            .refs
+            .snapshots
+            .iter()
+            .position(|(id, _, _)| id == snapshot_id)?;
 
-    fn get_delta_segment<F>(&self, condition: F) -> Option<Vec<String>>
-    where
-        F: Fn(&String, &SnapshotKind) -> bool,
-    {
         let mut segment = Vec::new();
 
-        for (id, kind, _) in self.refs.snapshots.iter().rev() {
+        for (id, kind, _) in self.refs.snapshots[..=index].iter().rev() {
             segment.push(id.clone());
-            if condition(id, kind) {
+            if *kind == SnapshotKind::Full {
                 break;
             }
         }

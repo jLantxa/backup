@@ -18,7 +18,7 @@
 use core::panic;
 use std::path::Path;
 
-use backup::{Repo, Snapshot};
+use backup::Repo;
 
 mod backup;
 mod hashing;
