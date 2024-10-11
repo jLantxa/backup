@@ -15,10 +15,18 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-use crate::{backup::FileMetadata, hashing, io::SecureStorage};
-use std::{fs::File, io::Read, path::Path};
+use crate::{
+    backup::{Delta, FileMetadata},
+    hashing,
+    io::SecureStorage,
+};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+};
 
-const CHUNK_SIZE: usize = 1024 * 1024;
+const CHUNK_SIZE: usize = 1024 * 1024; // 1MB
 
 pub struct StorageResult {
     pub chunk_hashes: Vec<String>,
@@ -33,13 +41,21 @@ pub fn store_file(
     secure_storage: &SecureStorage,
     compression_level: i32,
 ) -> std::io::Result<StorageResult> {
-    let mut file = File::open(src_path)?;
-    let mut buffer = [0_u8; CHUNK_SIZE];
+    let mut file = File::open(src_path).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!("Failed to open source file {:?}: {}", src_path, e),
+        )
+    })?;
 
+    let mut buffer = vec![0_u8; CHUNK_SIZE];
     let mut chunks = Vec::new();
     let (mut bytes_total, mut bytes_stored): (usize, usize) = (0, 0);
 
-    while let Ok(bytes_read) = file.read(&mut buffer) {
+    loop {
+        let bytes_read = file.read(&mut buffer).map_err(|e| {
+            std::io::Error::new(e.kind(), format!("Failed to read from file: {}", e))
+        })?;
         if bytes_read == 0 {
             break;
         }
@@ -57,11 +73,26 @@ pub fn store_file(
         let chunk_path = repo_path.join(dir_name).join(file_name);
         chunks.push(hash_str.clone());
 
-        // Create directory and store the chunk if it doesn't exist
+        // Store the chunk if it doesn't exist
         if !chunk_path.exists() {
-            std::fs::create_dir_all(repo_path.join(dir_name))?;
-            let bytes_processed =
-                secure_storage.save_to_file(&chunk_path, chunk, compression_level)?;
+            let dir_path = repo_path.join(dir_name);
+            if !dir_path.exists() {
+                std::fs::create_dir_all(&dir_path).map_err(|e| {
+                    std::io::Error::new(
+                        e.kind(),
+                        format!("Failed to create directory {:?}: {}", dir_path, e),
+                    )
+                })?;
+            }
+
+            let bytes_processed = secure_storage
+                .save_to_file(&chunk_path, chunk, compression_level)
+                .map_err(|e| {
+                    std::io::Error::new(
+                        e.kind(),
+                        format!("Failed to store chunk at {:?}: {}", chunk_path, e),
+                    )
+                })?;
             bytes_stored += bytes_processed;
         }
 
@@ -75,8 +106,53 @@ pub fn store_file(
     })
 }
 
-/// Restore a file from the repository
-pub fn restore_file(file: &FileMetadata, secure_storage: &SecureStorage) -> std::io::Result<()> {
-    // Placeholder function - To be implemented
-    todo!()
+/// Restore a file from the repository.
+pub fn restore_file(
+    file: &FileMetadata,
+    repo_path: &Path,
+    dst_path: &Path,
+    secure_storage: &SecureStorage,
+) -> std::io::Result<()> {
+    if let Delta::Chunks(chunks) = &file.delta {
+        for hash_str in chunks {
+            let (dir_name, file_name) = (&hash_str[0..2], &hash_str[2..]);
+            let chunk_path = repo_path.join("data").join(dir_name).join(file_name);
+
+            if chunk_path.exists() {
+                let chunk_data = secure_storage.load_from_file(&chunk_path).map_err(|e| {
+                    std::io::Error::new(
+                        e.kind(),
+                        format!("Failed to load chunk {:?}: {}", chunk_path, e),
+                    )
+                })?;
+
+                std::fs::create_dir_all(dst_path.parent().unwrap()).unwrap();
+                let mut output_file = File::create(dst_path).map_err(|e| {
+                    std::io::Error::new(
+                        e.kind(),
+                        format!("Failed to create destination file {:?}: {}", dst_path, e),
+                    )
+                })?;
+
+                output_file.write_all(&chunk_data).map_err(|e| {
+                    std::io::Error::new(
+                        e.kind(),
+                        format!("Failed to write chunk to file {:?}: {}", dst_path, e),
+                    )
+                })?;
+            } else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Chunk {} not found", hash_str),
+                ));
+            }
+        }
+    } else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "File is marked as deleted or contains no data",
+        ));
+    }
+
+    Ok(())
 }
