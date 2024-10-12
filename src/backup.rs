@@ -15,8 +15,8 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use crate::utils;
 use crate::{io::SecureStorage, storage};
-use chrono::{Local, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io;
@@ -388,7 +388,7 @@ impl Repo {
     ) -> Result<String, RepoError> {
         let snapshot_id = self.refs.snapshots.len().to_string();
         let previous_snapshot_id = self.refs.snapshots.last().map(|(id, _, _)| id.clone());
-        let utc_timestamp = Self::get_utc_timestamp();
+        let utc_timestamp = utils::get_utc_timestamp();
 
         let snapshot = Snapshot {
             id: snapshot_id.clone(),
@@ -490,22 +490,10 @@ impl Repo {
         let mut snapshots = Vec::new();
 
         for (id, kind, utc_timestamp) in &self.refs.snapshots {
-            let local_timestamp = Self::utc_to_local_format(*utc_timestamp);
+            let local_timestamp = utils::utc_to_local_format(*utc_timestamp);
             snapshots.push((id.clone(), kind.clone(), local_timestamp));
         }
 
         snapshots
-    }
-
-    /// Get the current UTC timestamp in Unix time (seconds since the epoch).
-    fn get_utc_timestamp() -> i64 {
-        Utc::now().timestamp()
-    }
-
-    /// Convert a given UTC timestamp to a human-readable time in the user's local timezone.
-    fn utc_to_local_format(utc_timestamp: i64) -> String {
-        let local_time = Local.timestamp_opt(utc_timestamp, 0).unwrap();
-
-        local_time.format("%Y-%m-%d %H:%M:%S").to_string()
     }
 }

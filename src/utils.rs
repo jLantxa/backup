@@ -15,7 +15,20 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use chrono::{Local, TimeZone, Utc};
 use sha2::{Digest, Sha256};
+
+/// Get the current UTC timestamp in Unix time (seconds since the epoch).
+pub fn get_utc_timestamp() -> i64 {
+    Utc::now().timestamp()
+}
+
+/// Convert a given UTC timestamp to a human-readable time in the user's local timezone.
+pub fn utc_to_local_format(utc_timestamp: i64) -> String {
+    let local_time = Local.timestamp_opt(utc_timestamp, 0).unwrap();
+
+    local_time.format("%Y-%m-%d %H:%M:%S").to_string()
+}
 
 /// Calculate the SHA-256 hash of a stream of bytes.
 pub fn calculate_hash(data: &[u8]) -> String {

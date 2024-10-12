@@ -17,8 +17,8 @@
 
 use crate::{
     backup::{Delta, FileMetadata},
-    hashing,
     io::SecureStorage,
+    utils,
 };
 use std::{
     fs::File,
@@ -90,7 +90,7 @@ pub fn store_file(
             continue;
         }
 
-        let hash_str = hashing::calculate_hash(chunk);
+        let hash_str = utils::calculate_hash(chunk);
         let (dir_name, file_name) = (&hash_str[0..2], &hash_str[2..]);
 
         let chunk_path = repo_path.join(dir_name).join(file_name);
