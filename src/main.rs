@@ -15,15 +15,14 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-use core::panic;
 use std::path::Path;
 
 use backup::Repo;
 
 mod backup;
-mod hashing;
 mod io;
 mod storage;
+mod utils;
 
 enum Action {
     CreateNew,
