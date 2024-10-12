@@ -273,8 +273,6 @@ impl Repo {
                 RepoError::InvalidSnapshotId(format!("Failed to restore snapshot: {}", snapshot_id))
             })?;
 
-        println!("{:?}", files);
-
         for (repo_filename, file_metadata) in files {
             let file_dst_path = dst_path.join(&repo_filename);
             storage::restore_file(
@@ -412,8 +410,6 @@ impl Repo {
         self.refs
             .snapshots
             .push((snapshot_id.clone(), snapshot_kind, utc_timestamp));
-
-        println!("{:?}", snapshot);
 
         self.persist_meta()?;
         Ok(snapshot_id)

@@ -26,7 +26,7 @@ use std::{
     path::Path,
 };
 
-const CHUNK_SIZE: usize = 1024 * 1024; // 1MB
+const CHUNK_SIZE: usize = 16 * 1024 * 1024; // 1MB
 
 pub struct StorageResult {
     pub chunk_hashes: Vec<String>,
@@ -113,6 +113,15 @@ pub fn restore_file(
     dst_path: &Path,
     secure_storage: &SecureStorage,
 ) -> std::io::Result<()> {
+    // TODO: Don't create the file before checking that all chunks exist.
+    std::fs::create_dir_all(dst_path.parent().unwrap()).unwrap();
+    let mut output_file = File::create(dst_path).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!("Failed to create destination file {:?}: {}", dst_path, e),
+        )
+    })?;
+
     if let Delta::Chunks(chunks) = &file.delta {
         for hash_str in chunks {
             let (dir_name, file_name) = (&hash_str[0..2], &hash_str[2..]);
@@ -123,14 +132,6 @@ pub fn restore_file(
                     std::io::Error::new(
                         e.kind(),
                         format!("Failed to load chunk {:?}: {}", chunk_path, e),
-                    )
-                })?;
-
-                std::fs::create_dir_all(dst_path.parent().unwrap()).unwrap();
-                let mut output_file = File::create(dst_path).map_err(|e| {
-                    std::io::Error::new(
-                        e.kind(),
-                        format!("Failed to create destination file {:?}: {}", dst_path, e),
                     )
                 })?;
 
