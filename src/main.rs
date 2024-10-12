@@ -31,7 +31,6 @@ enum Action {
     Restore(String),
     List,
 }
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
@@ -47,7 +46,7 @@ fn main() {
     let repo_path = Path::new(&args[2]).to_owned();
     let src_path = Path::new(&args[3]).to_owned();
     let restore_path = Path::new(&args[4]).to_owned();
-    let password = "password";
+    let password = &args[6];
 
     match action {
         Action::CreateNew => {
