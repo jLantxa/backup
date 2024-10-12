@@ -64,15 +64,12 @@ fn main() {
             repo.restore_last_snapshot(&restore_path).unwrap();
         }
         Action::Restore(id) => {
-            println!("{}", id);
             let repo = Repo::from_existing(&repo_path, &password).unwrap();
             repo.restore_snapshot(&id, &restore_path).unwrap();
         }
         Action::List => {
             let repo = Repo::from_existing(&repo_path, &password).unwrap();
             let snapshots = repo.list_snapshots();
-
-            println!("{:?}", snapshots);
         }
     }
 }
