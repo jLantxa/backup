@@ -158,7 +158,7 @@ pub struct Repo {
 impl Repo {
     /// Create a new repository
     pub fn new(path: &Path, password: &str) -> Result<Self, RepoError> {
-        let secure_storage = SecureStorage {};
+        let secure_storage = SecureStorage::new(password);
         let repo_path = path.to_path_buf();
         let paths = Self::build_paths(&repo_path);
 
@@ -179,7 +179,7 @@ impl Repo {
 
     /// Load an existing repository
     pub fn from_existing(path: &Path, password: &str) -> Result<Self, RepoError> {
-        let secure_storage = SecureStorage {};
+        let secure_storage = SecureStorage::new(password);
         let repo_path = path.to_path_buf();
         let paths = Self::build_paths(&repo_path);
 

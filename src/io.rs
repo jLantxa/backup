@@ -15,21 +15,38 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use aes_gcm::aead::Aead;
+use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
+use argon2::Argon2;
+use rand::{Rng, RngCore};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 use zstd::stream::read::Decoder as ZstdDecoder;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
+const SALT_LENGTH: usize = 16;
+
 /// Secure storage is an abstraction for file IO that handles compression and encryption.
-pub struct SecureStorage;
+pub struct SecureStorage {
+    password: String,
+}
 
 impl SecureStorage {
+    /// Create a new instance of SecureStorage with a password
+    pub fn new(password: &str) -> Self {
+        SecureStorage {
+            password: String::from(password),
+        }
+    }
+
     /// Load a file previously saved with SecureStorage
     pub fn load_from_file(&self, path: &Path) -> std::io::Result<Vec<u8>> {
-        let data = std::fs::read(path)?;
-        Self::decompress(&data)
+        let data = fs::read(path)?;
+        let decrypted_data = self.decrypt(&data)?;
+        Self::decompress(&decrypted_data)
     }
 
     /// Save data to a file with SecureStorage
@@ -40,11 +57,12 @@ impl SecureStorage {
         compression_level: i32,
     ) -> std::io::Result<usize> {
         let compressed_data = Self::compress(data, compression_level)?;
-        std::fs::write(path, &compressed_data)?;
-        Ok(compressed_data.len())
+        let encrypted_data = self.encrypt(&compressed_data)?;
+        fs::write(path, &encrypted_data)?;
+        Ok(encrypted_data.len())
     }
 
-    /// Deserialize a JSON metadata file.
+    /// Serialize a JSON metadata file.
     pub fn load_json<T: DeserializeOwned>(&self, path: &Path) -> std::io::Result<T> {
         let data = self.load_from_file(path)?;
         let text = String::from_utf8(data).map_err(|_| {
@@ -83,6 +101,67 @@ impl SecureStorage {
         decoder.read_to_end(&mut decompressed)?;
         Ok(decompressed)
     }
+
+    /// Encrypt data using AES-GCM
+    fn encrypt(&self, data: &[u8]) -> std::io::Result<Vec<u8>> {
+        let salt = Self::generate_salt::<SALT_LENGTH>();
+        let key = self.derive_key(&salt);
+
+        let key = Key::<Aes256Gcm>::from_slice(&key);
+        let cipher = Aes256Gcm::new(&key);
+
+        // Generate a random nonce for each encryption
+        let mut nonce = [0u8; 12];
+        rand::thread_rng().fill(&mut nonce);
+        let nonce = Nonce::from_slice(&nonce);
+
+        let encrypted_data = cipher
+            .encrypt(nonce, data)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Encryption failed"))?;
+
+        /* Return salt + nonce + encrypted data as the result
+         * The salt must be stored together with the data.
+         */
+        Ok([salt.as_slice(), nonce.as_slice(), &encrypted_data].concat())
+    }
+
+    /// Decrypt data using AES-GCM
+    fn decrypt(&self, data: &[u8]) -> std::io::Result<Vec<u8>> {
+        // Recover the salt to derive the key
+        let salt = &data[0..SALT_LENGTH];
+
+        let data = &data[SALT_LENGTH..];
+        let key = self.derive_key(salt);
+
+        let key = Key::<Aes256Gcm>::from_slice(&key);
+        let cipher = Aes256Gcm::new(key);
+
+        // Extract the nonce from the first 12 bytes of the data
+        let (nonce, ciphertext) = data.split_at(12);
+        let nonce = Nonce::from_slice(nonce);
+
+        cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Decryption failed"))
+    }
+
+    fn derive_key(&self, salt: &[u8]) -> [u8; 32] {
+        let mut output_key_material = [0u8; 32];
+        Argon2::default().hash_password_into(
+            self.password.as_bytes(),
+            salt,
+            &mut output_key_material,
+        );
+
+        output_key_material
+    }
+
+    fn generate_salt<const LENGTH: usize>() -> [u8; LENGTH] {
+        let mut rng = rand::thread_rng();
+        let mut salt = [0u8; LENGTH];
+        rng.fill_bytes(&mut salt);
+        salt
+    }
 }
 
 #[cfg(test)]
@@ -114,5 +193,20 @@ mod tests {
                 compression_level, ratio
             );
         }
+    }
+
+    #[test]
+    fn test_generate_salt() {
+        let salt = SecureStorage::generate_salt::<4>();
+        assert_eq!(salt.len(), 4);
+
+        let salt = SecureStorage::generate_salt::<8>();
+        assert_eq!(salt.len(), 8);
+
+        let salt = SecureStorage::generate_salt::<16>();
+        assert_eq!(salt.len(), 16);
+
+        let salt = SecureStorage::generate_salt::<32>();
+        assert_eq!(salt.len(), 32);
     }
 }
