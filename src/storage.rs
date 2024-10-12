@@ -26,12 +26,32 @@ use std::{
     path::Path,
 };
 
-const CHUNK_SIZE: usize = 16 * 1024 * 1024; // 1MB
-
 pub struct StorageResult {
     pub chunk_hashes: Vec<String>,
     pub bytes_read: usize,
     pub bytes_stored: usize,
+}
+
+/// Assign a chunk size to every file size.
+fn get_chunk_size(file_size: usize) -> usize {
+    static CHUNK_SIZES: [(usize, usize); 8] = [
+        (4 * 1024 * 1024 * 1024, 256 * 1024 * 1024), // > 4 GB => 256 MB
+        (1 * 1024 * 1024 * 1024, 64 * 1024 * 1024),  // 1 GB - 4 GB => 64 MB
+        (256 * 1024 * 1024, 16 * 1024 * 1024),       // 256 MB - 1 GB => 16 MB
+        (64 * 1024 * 1024, 4 * 1024 * 1024),         // 64 MB - 256 MB => 4 MB
+        (16 * 1024 * 1024, 1 * 1024 * 1024),         // 16 MB - 64 MB => 1 MB
+        (4 * 1024 * 1024, 256 * 1024),               // 4 MB - 16 MB => 256 KB
+        (1 * 1024 * 1024, 64 * 1024),                // 1 MB - 4 MB => 64 KB
+        (256 * 1024, 16 * 1024),                     // 256 KB - 1 MB => 16 KB
+    ];
+
+    for (table_file_size, table_chunk_size) in CHUNK_SIZES {
+        if file_size > table_file_size {
+            return table_chunk_size;
+        }
+    }
+
+    4 * 1024 // 0 - 4 GB => 4 KB
 }
 
 /// Store a file in the repository.
@@ -48,7 +68,10 @@ pub fn store_file(
         )
     })?;
 
-    let mut buffer = vec![0_u8; CHUNK_SIZE];
+    let file_metadata = std::fs::metadata(src_path).unwrap();
+    let chunk_size = get_chunk_size(file_metadata.len() as usize);
+
+    let mut buffer = vec![0_u8; chunk_size];
     let mut chunks = Vec::new();
     let (mut bytes_total, mut bytes_stored): (usize, usize) = (0, 0);
 
@@ -156,4 +179,35 @@ pub fn restore_file(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    /// Test different file sizes to verify the correct chunk size is returned
+    fn test_get_chunk_size() {
+        // Test very small file sizes
+        assert_eq!(get_chunk_size(0), 4 * 1024); // File size: 0 bytes -> Chunk size: 4 KB
+        assert_eq!(get_chunk_size(100 * 1024), 4 * 1024); // File size: 100 KB -> Chunk size: 4 KB
+        assert_eq!(get_chunk_size(200 * 1024), 4 * 1024); // File size: 200 KB -> Chunk size: 4 KB
+
+        // Test small file sizes in the next range
+        assert_eq!(get_chunk_size(300 * 1024), 16 * 1024); // File size: 300 KB -> Chunk size: 16 KB
+        assert_eq!(get_chunk_size(1 * 1024 * 1024), 16 * 1024); // File size: 1 MB -> Chunk size: 16 KB
+        assert_eq!(get_chunk_size(3 * 1024 * 1024), 64 * 1024); // File size: 3 MB -> Chunk size: 64 KB
+
+        // Test medium file sizes
+        assert_eq!(get_chunk_size(10 * 1024 * 1024), 256 * 1024); // File size: 10 MB -> Chunk size: 256 KB
+        assert_eq!(get_chunk_size(30 * 1024 * 1024), 1 * 1024 * 1024); // File size: 30 MB -> Chunk size: 1 MB
+
+        // Test large file sizes
+        assert_eq!(get_chunk_size(100 * 1024 * 1024), 4 * 1024 * 1024); // File size: 100 MB -> Chunk size: 4 MB
+        assert_eq!(get_chunk_size(300 * 1024 * 1024), 16 * 1024 * 1024); // File size: 300 MB -> Chunk size: 16 MB
+
+        // Test very large file sizes
+        assert_eq!(get_chunk_size(2 * 1024 * 1024 * 1024), 64 * 1024 * 1024); // File size: 2 GB -> Chunk size: 64 MB
+        assert_eq!(get_chunk_size(5 * 1024 * 1024 * 1024), 256 * 1024 * 1024); // File size: 5 GB -> Chunk size: 256 MB
+    }
 }
