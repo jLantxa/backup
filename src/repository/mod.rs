@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+pub mod gc;
 pub mod index;
 pub mod manifest;
 pub mod pack_saver;
@@ -25,7 +26,7 @@ pub mod streamers;
 pub mod tree;
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use aes_gcm::aead::OsRng;
 use aes_gcm::aead::rand_core::RngCore;
@@ -39,6 +40,7 @@ use snapshot::Snapshot;
 use zstd::DEFAULT_COMPRESSION_LEVEL;
 
 use crate::global::{FileType, SaveID};
+use crate::repository::index::MasterIndex;
 use crate::{
     backend::StorageBackend, global::ID, global::ObjectType, repository::storage::SecureStorage,
 };
@@ -98,7 +100,7 @@ pub trait RepositoryBackend: Sync + Send {
 
     /// Saves an IndexFile into the repository
     /// Returns a tuple (raw_size, encoded_size)
-    fn save_index(&self, index: IndexFile) -> Result<(u64, u64)>;
+    fn save_index(&self, index: IndexFile) -> Result<(ID, u64, u64)>;
 
     /// Loads an index file
     fn load_index(&self, id: &ID) -> Result<IndexFile>;
@@ -111,6 +113,8 @@ pub trait RepositoryBackend: Sync + Send {
 
     /// Deletes a file from the repository
     fn delete_file(&self, file_type: FileType, id: &ID) -> Result<()>;
+
+    fn index(&self) -> Arc<Mutex<MasterIndex>>;
 
     /// Flushes all pending data and saves it.
     /// Returns a tuple (raw_size, encoded_size)

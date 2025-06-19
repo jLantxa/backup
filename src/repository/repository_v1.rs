@@ -261,7 +261,7 @@ impl RepositoryBackend for Repository {
         Ok(ids)
     }
 
-    fn save_index(&self, index: IndexFile) -> Result<(u64, u64)> {
+    fn save_index(&self, index: IndexFile) -> Result<(ID, u64, u64)> {
         let index_file_json = serde_json::to_string_pretty(&index)?;
         let index_file_json = index_file_json.as_bytes();
         let uncompressed_size = index_file_json.len() as u64;
@@ -273,7 +273,7 @@ impl RepositoryBackend for Repository {
         let index_path = self.index_path.join(&id.to_hex());
         self.save_with_rename(&index_file_json, &index_path)?;
 
-        Ok((uncompressed_size, compressed_size))
+        Ok((id, uncompressed_size, compressed_size))
     }
 
     fn flush(&self) -> Result<(u64, u64)> {
@@ -410,6 +410,10 @@ impl RepositoryBackend for Repository {
 
         self.backend.remove_file(&path)
     }
+
+    fn index(&self) -> Arc<Mutex<MasterIndex>> {
+        self.index.clone()
+    }
 }
 
 impl Drop for Repository {
@@ -488,12 +492,19 @@ impl Repository {
         let mut master_index_guard = self.index.lock().unwrap();
 
         for file in files {
+            let file_name = file
+                .file_name()
+                .expect("Could not read index file name")
+                .to_string_lossy()
+                .to_owned();
+            let id = ID::from_hex(&file_name)?;
             let index_file = self.backend.read(&file)?;
             let index_file = self.secure_storage.decode(&index_file)?;
             let index_file = serde_json::from_slice(&index_file)?;
 
             let mut index = Index::from_index_file(index_file);
             index.finalize();
+            index.set_id(id);
 
             master_index_guard.add_index(index);
         }

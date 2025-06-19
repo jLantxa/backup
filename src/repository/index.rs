@@ -40,6 +40,15 @@ struct BlobLocation {
     pub length: u64,
 }
 
+/// Represents the location and size of a blob within a pack file.
+/// This struct contains the full pack ID. This is suited for iterating.
+#[derive(Debug)]
+pub struct BlobLocator {
+    pub pack_id: ID,
+    pub offset: u64,
+    pub length: u64,
+}
+
 /// Manages the mapping of blob IDs to their locations within pack files.
 /// An `Index` can be in a 'pending' state, indicating it's still being built.
 #[derive(Debug)]
@@ -56,6 +65,9 @@ pub struct Index {
     is_pending: bool,
 
     create_time: Instant,
+
+    // The ID of this index, if it is finalized and serialized
+    id: Option<ID>,
 }
 
 impl Index {
@@ -65,6 +77,7 @@ impl Index {
             pack_ids: IndexSet::new(),
             is_pending: true,
             create_time: Instant::now(),
+            id: None,
         }
     }
 
@@ -72,6 +85,16 @@ impl Index {
     /// and is typically ready for persistence or read-only operations.
     pub fn finalize(&mut self) {
         self.is_pending = false;
+    }
+
+    /// Returns the id of this index
+    pub fn id(&self) -> Option<ID> {
+        self.id.clone()
+    }
+
+    /// Sets the index ID
+    pub fn set_id(&mut self, id: ID) {
+        self.id = Some(id);
     }
 
     /// Returns `true` if the index is currently pending (still receiving entries).
@@ -181,7 +204,8 @@ impl Index {
             }
         }
 
-        let (raw_size, encoded_size) = repo.save_index(index_file)?;
+        let (id, raw_size, encoded_size) = repo.save_index(index_file)?;
+        self.id = Some(id);
 
         Ok((raw_size, encoded_size))
     }
@@ -192,6 +216,23 @@ impl Index {
 
     pub fn num_packs(&self) -> usize {
         self.pack_ids.len()
+    }
+
+    pub fn iter_ids(&self) -> impl Iterator<Item = (&ID, BlobLocator)> {
+        self.ids.iter().map(|(id, loc)| {
+            (
+                id,
+                BlobLocator {
+                    pack_id: self
+                        .pack_ids
+                        .get_value(loc.pack_array_index)
+                        .unwrap()
+                        .clone(),
+                    offset: loc.offset,
+                    length: loc.length,
+                },
+            )
+        })
     }
 }
 
@@ -298,6 +339,32 @@ impl MasterIndex {
         }
 
         Ok((uncompressed_size, compressed_size))
+    }
+
+    pub fn iter_ids(&self) -> impl Iterator<Item = (&ID, BlobLocator)> {
+        // We start with an "empty" chain or the first iterator
+        let mut chained_iterator: Box<dyn Iterator<Item = (&ID, BlobLocator)>> =
+            Box::new(std::iter::empty());
+
+        for index in &self.indexes {
+            // Chain each index's iterator to the accumulating chained_iterator
+            chained_iterator = Box::new(chained_iterator.chain(index.iter_ids()));
+        }
+        chained_iterator
+    }
+
+    /// Returns the IDs of all finalized (serialized) indexes
+    pub fn ids(&self) -> Vec<ID> {
+        let mut ids = Vec::new();
+        for idx in &self.indexes {
+            if idx.is_pending() {
+                continue;
+            }
+            if let Some(id) = idx.id() {
+                ids.push(id);
+            }
+        }
+        ids
     }
 }
 
