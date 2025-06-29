@@ -20,7 +20,7 @@ use anyhow::{Context, Result};
 use blake3::Hasher;
 use crossbeam_channel::Sender;
 
-use crate::global::{ID, ObjectType};
+use crate::global::{ObjectType, ID};
 
 /// Describes a single blob's location and size within a packed file.
 /// This metadata is crucial for retrieving individual blobs from a pack.
@@ -91,6 +91,7 @@ impl Packer {
     }
 
     /// Returns `true` if the packer contains no blob data and no descriptors.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty() && self.blob_descriptors.is_empty()
     }
