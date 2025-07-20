@@ -97,6 +97,8 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let backend = new_backend_with_prompt(global_args, args.dry_run)?;
     let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend)?;
 
+    let start = Instant::now();
+
     // Get source paths from arguments or readdir root path
     let source_paths = if !args.as_root {
         args.paths.clone()
@@ -176,8 +178,6 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
             Err(_) => bail!("Parent snapshot not found"),
         },
     };
-
-    let start = Instant::now();
 
     // Scan filesystem
     let spinner = ProgressBar::new_spinner();
