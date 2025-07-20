@@ -259,6 +259,7 @@ impl SnapshotProgressReporter {
             total_raw_bytes,
             total_encoded_bytes,
             diff_counts: self.diff_counts.read().clone(),
+            amends: None,
         }
     }
 }

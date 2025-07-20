@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{collections::BTreeSet, path::PathBuf, sync::Arc};
+use std::{collections::BTreeSet, path::PathBuf, sync::Arc, time::Instant};
 
 use anyhow::{Result, bail};
 use clap::Args;
@@ -58,6 +58,8 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let backend = new_backend_with_prompt(global_args, false)?;
     let (repo, secure_storage) =
         repository::try_open(pass, global_args.key.as_ref(), backend.clone())?;
+
+    let start = Instant::now();
 
     let snapshot_streamer = SnapshotStreamer::new(repo.clone())?;
     let mut visited_blobs = BTreeSet::new();
@@ -164,6 +166,12 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     if error_counter > 0 {
         ui::cli::log!("{} {}", error_counter, "[ERROR]".bold().red());
     }
+
+    ui::cli::log!();
+    ui::cli::log!(
+        "Finished in {}",
+        utils::pretty_print_duration(start.elapsed())
+    );
 
     Ok(())
 }

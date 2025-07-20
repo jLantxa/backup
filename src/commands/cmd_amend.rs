@@ -15,6 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeSet;
+use std::time::Instant;
 use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Result, bail};
@@ -44,8 +45,13 @@ pub struct CmdArgs {
     #[arg(value_parser = clap::value_parser!(UseSnapshot), default_value_t=UseSnapshot::Latest, group = "snapshot_group")]
     pub snapshot: UseSnapshot,
 
+    /// Apply changes to all snapshots
     #[arg(short, long, group = "snapshot_group")]
     pub all: bool,
+
+    /// Keep the old snapshot
+    #[clap(long = "keep-old", value_parser, default_value_t = false)]
+    pub keep_old: bool,
 
     /// Tags (comma-separated)
     #[clap(long = "tags", value_parser, group = "tags_group")]
@@ -73,6 +79,8 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let backend = new_backend_with_prompt(global_args, false)?;
     let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend)?;
 
+    let start = Instant::now();
+
     let mut snapshots: Vec<(ID, Snapshot)> = Vec::new();
 
     if args.all {
@@ -86,7 +94,6 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
         }
     }
 
-    repo.init_pack_saver(1);
     let num_snapshots = snapshots.len();
     for (i, (id, snapshot)) in snapshots.iter_mut().rev().enumerate() {
         let amend_str = format!(
@@ -102,18 +109,24 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
         amend(repo.clone(), id, snapshot, args)?;
         ui::cli::log!();
     }
-    repo.finalize_pack_saver();
+
+    ui::cli::log!(
+        "Finished in {}",
+        utils::pretty_print_duration(start.elapsed())
+    );
 
     Ok(())
 }
 
 fn amend(
     repo: Arc<dyn RepositoryBackend>,
-    orig_snapshot_id: &ID,
+    origin_snapshot_id: &ID,
     snapshot: &mut Snapshot,
     args: &CmdArgs,
 ) -> Result<()> {
     let (mut raw, mut encoded) = (0, 0);
+
+    snapshot.summary.amends = Some(origin_snapshot_id.clone());
 
     if args.description.is_some() {
         snapshot.description = args.description.clone();
@@ -128,6 +141,8 @@ fn amend(
     } else if args.clear_tags {
         snapshot.tags = BTreeSet::new();
     }
+
+    let origin_processed_bytes = snapshot.summary.processed_bytes;
 
     if args.exclude.is_some() {
         rewrite_snapshot_tree(repo.clone(), snapshot, args.exclude.clone())?;
@@ -145,15 +160,13 @@ fn amend(
     // Delete the old snapshot ID if it changed
     // Note: To protect the repo from interruptions, we delete the snapshot only
     // after the new one is saved.
-    if new_id != *orig_snapshot_id {
-        repo.delete_file(FileType::Snapshot, orig_snapshot_id)?;
-
-        let (raw_meta, encoded_meta) = repo.flush()?;
-        raw += raw_meta;
-        encoded += encoded_meta;
+    if new_id != *origin_snapshot_id {
+        if !args.keep_old {
+            repo.delete_file(FileType::Snapshot, origin_snapshot_id)?;
+        }
 
         ui::cli::log!(
-            "New snapshot ID {}",
+            "New snapshot ID   {}",
             new_id.to_short_hex(SHORT_SNAPSHOT_ID_LEN).bold().green()
         );
         ui::cli::log!(
@@ -162,6 +175,15 @@ fn amend(
             format!("({} compressed)", format_size(encoded, 3))
                 .bold()
                 .green()
+        );
+        ui::cli::log!(
+            "Snapshot size: {} -> {}",
+            utils::format_size(origin_processed_bytes, 3)
+                .yellow()
+                .bold(),
+            utils::format_size(snapshot.summary.processed_bytes, 3)
+                .green()
+                .bold()
         );
     } else {
         ui::cli::log!("No changes");
@@ -196,6 +218,7 @@ fn rewrite_snapshot_tree(
 
     let mut final_root_tree_id: Option<ID> = None;
     let mut pending_trees = init_pending_trees(&snapshot.root, &paths);
+
     let node_streamer = SerializedNodeStreamer::new(
         repo.clone(),
         Some(snapshot.tree.clone()),
@@ -204,7 +227,16 @@ fn rewrite_snapshot_tree(
         cannonical_excludes.clone(),
     )?;
 
+    snapshot.summary.processed_items_count = 0;
+    snapshot.summary.processed_bytes = 0;
+
+    repo.init_pack_saver(1);
     for (path, stream_node) in node_streamer.flatten() {
+        snapshot.summary.processed_items_count += 1;
+        if !stream_node.node.is_dir() {
+            snapshot.summary.processed_bytes += stream_node.node.metadata.size;
+        }
+
         // The path is not excluded, so we add the node to the pending trees map.
         let (raw, encoded) = tree_serializer::handle_processed_item(
             (path.clone(), stream_node),
@@ -217,6 +249,18 @@ fn rewrite_snapshot_tree(
         raw_bytes += raw;
         encoded_bytes += encoded;
     }
+
+    let (raw_meta, encoded_meta) = repo.flush()?;
+    raw_bytes += raw_meta;
+    encoded_bytes += encoded_meta;
+
+    // Increase meta counters in snapshot summary
+    snapshot.summary.meta_raw_bytes += raw_bytes;
+    snapshot.summary.meta_encoded_bytes += encoded_bytes;
+    snapshot.summary.total_raw_bytes += raw_bytes;
+    snapshot.summary.total_encoded_bytes += encoded_bytes;
+
+    repo.finalize_pack_saver();
 
     match final_root_tree_id {
         Some(amended_tree_id) => snapshot.tree = amended_tree_id,

@@ -141,6 +141,9 @@ pub struct SnapshotSummary {
 
     #[serde(flatten)]
     pub diff_counts: DiffCounts,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amends: Option<ID>, // The ID of the snapshot amended by this one
 }
 
 /// A snapshot streamer.
