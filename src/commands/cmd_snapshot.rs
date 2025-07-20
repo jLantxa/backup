@@ -54,6 +54,10 @@ pub struct CmdArgs {
     #[clap(value_parser, required = true)]
     pub paths: Vec<PathBuf>,
 
+    /// Use a single directory path as the snapshot root
+    #[clap(long = "as-root", value_parser, default_value_t = false)]
+    pub as_root: bool,
+
     /// A list of paths to exclude: path[,path,...]. Can be used multiple times.
     #[clap(long, value_parser, value_delimiter = ',', required = false)]
     pub exclude: Option<Vec<PathBuf>>,
@@ -93,14 +97,33 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let backend = new_backend_with_prompt(global_args, args.dry_run)?;
     let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend)?;
 
+    // Get source paths from arguments or readdir root path
+    let source_paths = if !args.as_root {
+        args.paths.clone()
+    } else {
+        // Use path as root and readdir
+        if args.paths.len() != 1 {
+            bail!("Only one path can be the snapshot root");
+        } else {
+            let root = args.paths.last().unwrap();
+            if !root.is_dir() {
+                bail!("The snapshot root must be a directory");
+            }
+
+            std::fs::read_dir(root)?
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path())
+                .collect()
+        }
+    };
+
     let mut tags: BTreeSet<String> = parse_tags(Some(&args.tags_str));
     tags.retain(|tag| tag != EMPTY_TAG_MARK);
 
     // Cannonicalize and deduplicate source paths
     // Use a BTreeSet to remove duplicate paths and sort them alphabetically.
-    let source_paths = &args.paths;
     let mut absolute_source_paths = BTreeSet::new();
-    for path in source_paths {
+    for path in &source_paths {
         match std::fs::canonicalize(path) {
             Ok(absolute_path) => {
                 let _ = absolute_source_paths.insert(absolute_path);

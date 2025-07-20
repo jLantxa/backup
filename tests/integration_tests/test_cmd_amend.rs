@@ -69,6 +69,7 @@ mod tests {
                 backup_data_tmp_path.join("2"),
                 backup_data_tmp_path.join("file.txt"),
             ],
+            as_root: false,
             exclude: None,
             tags_str: String::new(),
             description: None,
@@ -190,6 +191,7 @@ mod tests {
         // Run snapshot twice
         let snapshot_args = cmd_snapshot::CmdArgs {
             paths: Vec::new(),
+            as_root: false,
             exclude: None,
             tags_str: "tag0,tag1".to_string(),
             description: Some(String::from("This snapshot will be amended")),
