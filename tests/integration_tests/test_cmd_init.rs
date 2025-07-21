@@ -22,8 +22,8 @@ mod tests {
     use mapache::{
         backend::localfs::LocalFS,
         commands::{self, GlobalArgs, cmd_init::CmdArgs},
-        global::set_global_opts_with_args,
-        repository::{self},
+        global::{defaults::DEFAULT_DEFAULT_PACK_SIZE_MIB, set_global_opts_with_args},
+        repository::{self, RepoConfig},
     };
 
     use anyhow::{Context, Result};
@@ -48,6 +48,7 @@ mod tests {
             verbosity: None,
             ssh_pubkey: None,
             ssh_privatekey: None,
+            pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
         let args = CmdArgs {
             repository_version: 1,
@@ -72,8 +73,13 @@ mod tests {
 
         // Try to open repo
         let backend = Arc::new(LocalFS::new(repo_path));
-        repository::try_open(Some(password.to_string()), None, backend)
-            .with_context(|| "Failed to open repository")?;
+        repository::try_open(
+            Some(password.to_string()),
+            None,
+            backend,
+            RepoConfig::default(),
+        )
+        .with_context(|| "Failed to open repository")?;
 
         Ok(())
     }
@@ -98,6 +104,7 @@ mod tests {
             verbosity: None,
             ssh_pubkey: None,
             ssh_privatekey: None,
+            pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
         let args = CmdArgs {
             repository_version: 1,
@@ -123,8 +130,13 @@ mod tests {
 
         // Try to open repo
         let backend = Arc::new(LocalFS::new(repo_path));
-        repository::try_open(Some(password.to_string()), Some(&keyfile_path), backend)
-            .with_context(|| "Failed to open repository")?;
+        repository::try_open(
+            Some(password.to_string()),
+            Some(&keyfile_path),
+            backend,
+            RepoConfig::default(),
+        )
+        .with_context(|| "Failed to open repository")?;
 
         Ok(())
     }

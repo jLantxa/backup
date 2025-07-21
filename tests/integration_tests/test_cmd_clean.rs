@@ -20,7 +20,10 @@ mod tests {
     use std::path::PathBuf;
 
     use anyhow::{Context, Result};
-    use mapache::commands::{self, GlobalArgs, UseSnapshot, cmd_clean, cmd_restore, cmd_snapshot};
+    use mapache::{
+        commands::{self, GlobalArgs, UseSnapshot, cmd_clean, cmd_restore, cmd_snapshot},
+        global::defaults::DEFAULT_DEFAULT_PACK_SIZE_MIB,
+    };
 
     use tempfile::tempdir;
 
@@ -53,6 +56,7 @@ mod tests {
             verbosity: None,
             ssh_pubkey: None,
             ssh_privatekey: None,
+            pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
 
         // Init repo

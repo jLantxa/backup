@@ -37,6 +37,7 @@ use parking_lot::RwLock;
 use snapshot::Snapshot;
 use zstd::DEFAULT_COMPRESSION_LEVEL;
 
+use crate::global::defaults::DEFAULT_PACK_SIZE;
 use crate::{
     backend::StorageBackend,
     global::{BlobType, FileType, ID, SaveID},
@@ -54,6 +55,19 @@ pub const LATEST_REPOSITORY_VERSION: RepoVersion = 1;
 pub const MANIFEST_PATH: &str = "manifest";
 pub const KEYS_DIR: &str = "keys";
 
+#[derive(Debug)]
+pub struct RepoConfig {
+    pub pack_size: u64,
+}
+
+impl Default for RepoConfig {
+    fn default() -> Self {
+        Self {
+            pack_size: DEFAULT_PACK_SIZE,
+        }
+    }
+}
+
 pub trait RepositoryBackend: Sync + Send {
     /// Create and initialize a new repository
     fn init(backend: Arc<dyn StorageBackend>, secure_storage: Arc<SecureStorage>) -> Result<()>
@@ -64,6 +78,7 @@ pub trait RepositoryBackend: Sync + Send {
     fn open(
         backend: Arc<dyn StorageBackend>,
         secure_storage: Arc<SecureStorage>,
+        config: RepoConfig,
     ) -> Result<Arc<Self>>
     where
         Self: Sized;
@@ -223,6 +238,7 @@ pub fn try_open(
     mut password: Option<String>,
     key_file_path: Option<&PathBuf>,
     backend: Arc<dyn StorageBackend>,
+    config: RepoConfig,
 ) -> Result<(Arc<dyn RepositoryBackend>, Arc<SecureStorage>)> {
     if !backend.root_exists() {
         bail!("Could not open a repository. The path does not exist.");
@@ -274,7 +290,7 @@ pub fn try_open(
 
     let version = manifest.version;
 
-    let repo = open_repository_with_version(version, backend, secure_storage.clone())?;
+    let repo = open_repository_with_version(version, backend, secure_storage.clone(), config)?;
 
     Ok((repo, secure_storage))
 }
@@ -283,9 +299,10 @@ fn open_repository_with_version(
     version: RepoVersion,
     backend: Arc<dyn StorageBackend>,
     secure_storage: Arc<SecureStorage>,
+    config: RepoConfig,
 ) -> Result<Arc<dyn RepositoryBackend>> {
     if version == 1 {
-        let repo_v1 = repository_v1::Repository::open(backend, secure_storage)?;
+        let repo_v1 = repository_v1::Repository::open(backend, secure_storage, config)?;
         return Ok(repo_v1);
     }
 
@@ -308,11 +325,10 @@ mod tests {
         let temp_repo_path = temp_repo_dir.path().join("repo");
 
         let password = Some(String::from("mapachito"));
-
         let backend = Arc::new(LocalFS::new(temp_repo_path.to_owned()));
 
         init(password.clone(), None, backend.to_owned())?;
-        let _ = try_open(password, None, backend)?;
+        let _ = try_open(password, None, backend, RepoConfig::default())?;
 
         Ok(())
     }
@@ -332,7 +348,7 @@ mod tests {
         let backend = Arc::new(LocalFS::new(temp_repo_path.to_owned()));
 
         init(password.clone(), None, backend.to_owned())?;
-        let _ = try_open(password, None, backend)?;
+        let _ = try_open(password, None, backend, RepoConfig::default())?;
 
         Ok(())
     }

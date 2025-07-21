@@ -24,14 +24,14 @@ use crate::{
     commands::parse_tags,
     global::{self, FileType, ID},
     repository::{
-        self,
+        self, RepoConfig,
         snapshot::{Snapshot, SnapshotStreamer},
     },
     ui::{
         self,
         table::{Alignment, Table},
     },
-    utils,
+    utils::{self, size},
 };
 
 use super::GlobalArgs;
@@ -55,7 +55,11 @@ pub struct CmdArgs {
 pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let pass = utils::get_password_from_file(&global_args.password_file)?;
     let backend = new_backend_with_prompt(global_args, false)?;
-    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend)?;
+
+    let config = RepoConfig {
+        pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
+    };
+    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
 
     let mut snapshots_sorted: Vec<(ID, Snapshot)> = match &args.snapshot {
         None => SnapshotStreamer::new(repo.clone())?.collect(),

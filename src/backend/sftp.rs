@@ -504,9 +504,11 @@ impl StorageBackend for SftpBackend {
             gid: meta.gid,
             perm: meta.perm,
             atime: meta
-                .atime.map(|time| UNIX_EPOCH + Duration::from_secs(time)),
+                .atime
+                .map(|time| UNIX_EPOCH + Duration::from_secs(time)),
             mtime: meta
-                .mtime.map(|time| UNIX_EPOCH + Duration::from_secs(time)),
+                .mtime
+                .map(|time| UNIX_EPOCH + Duration::from_secs(time)),
         })
     }
 }

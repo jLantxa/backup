@@ -29,7 +29,7 @@ use crate::{
     commands::GlobalArgs,
     global::defaults::{DEFAULT_GC_TOLERANCE, SHORT_REPO_ID_LEN},
     repository::{
-        self, RepositoryBackend,
+        self, RepoConfig, RepositoryBackend,
         gc::{self},
         verify::verify_snapshot_links,
     },
@@ -37,7 +37,7 @@ use crate::{
         self, PROGRESS_REFRESH_RATE_HZ, SPINNER_TICK_CHARS,
         table::{Alignment, Table},
     },
-    utils::{self},
+    utils::{self, size},
 };
 
 #[derive(Args, Debug)]
@@ -64,7 +64,11 @@ pub struct CmdArgs {
 pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let pass = utils::get_password_from_file(&global_args.password_file)?;
     let backend = new_backend_with_prompt(global_args, args.dry_run)?;
-    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend)?;
+
+    let config = RepoConfig {
+        pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
+    };
+    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
 
     run_with_repo(global_args, args, repo)
 }

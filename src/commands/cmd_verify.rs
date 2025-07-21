@@ -26,14 +26,14 @@ use crate::{
     commands::GlobalArgs,
     global::{ID, defaults::SHORT_SNAPSHOT_ID_LEN},
     repository::{
-        self, RepositoryBackend,
+        self, RepoConfig, RepositoryBackend,
         snapshot::SnapshotStreamer,
         streamers::SerializedNodeStreamer,
         tree::NodeType,
         verify::{verify_blob, verify_pack, verify_snapshot_links},
     },
     ui::{self, default_bar_draw_target},
-    utils,
+    utils::{self, size},
 };
 
 #[derive(Args, Debug)]
@@ -56,8 +56,12 @@ pub struct CmdArgs {
 pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let pass = utils::get_password_from_file(&global_args.password_file)?;
     let backend = new_backend_with_prompt(global_args, false)?;
+
+    let config = RepoConfig {
+        pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
+    };
     let (repo, secure_storage) =
-        repository::try_open(pass, global_args.key.as_ref(), backend.clone())?;
+        repository::try_open(pass, global_args.key.as_ref(), backend.clone(), config)?;
 
     let start = Instant::now();
 

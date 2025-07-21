@@ -32,7 +32,7 @@ use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterato
 use crate::{
     global::{
         self, FileType, ID, SaveID,
-        defaults::{DEFAULT_MIN_PACK_SIZE_FACTOR, MAX_PACK_SIZE},
+        defaults::{DEFAULT_MIN_PACK_SIZE_FACTOR, DEFAULT_PACK_SIZE},
     },
     repository::{
         RepositoryBackend, snapshot::SnapshotStreamer, streamers::SerializedNodeStreamer,
@@ -111,7 +111,7 @@ pub fn scan(repo: Arc<dyn RepositoryBackend>, tolerance: f32) -> Result<Plan> {
 
     // Find small packs to repack
     for (pack_id, size) in kept_pack_size {
-        if (size as f32 / MAX_PACK_SIZE as f32) < DEFAULT_MIN_PACK_SIZE_FACTOR {
+        if (size as f32 / DEFAULT_PACK_SIZE as f32) < DEFAULT_MIN_PACK_SIZE_FACTOR {
             plan.small_packs.insert(pack_id);
         }
     }
@@ -136,7 +136,7 @@ pub fn scan(repo: Arc<dyn RepositoryBackend>, tolerance: f32) -> Result<Plan> {
         (1000.0f32 / PROGRESS_REFRESH_RATE_HZ as f32) as u64,
     ));
     for (pack_id, garbage_bytes) in pack_garbage.into_iter() {
-        if (garbage_bytes as f32 / MAX_PACK_SIZE as f32) > tolerance {
+        if (garbage_bytes as f32 / DEFAULT_PACK_SIZE as f32) > tolerance {
             keep_packs.remove(&pack_id);
             plan.obsolete_packs.insert(pack_id);
         } else {

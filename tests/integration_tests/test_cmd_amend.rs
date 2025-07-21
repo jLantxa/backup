@@ -23,7 +23,8 @@ mod tests {
     use mapache::{
         backend::localfs::LocalFS,
         commands::{self, GlobalArgs, UseSnapshot, cmd_amend, cmd_restore, cmd_snapshot},
-        repository::{snapshot::SnapshotStreamer, try_open},
+        global::defaults::DEFAULT_DEFAULT_PACK_SIZE_MIB,
+        repository::{RepoConfig, snapshot::SnapshotStreamer, try_open},
     };
 
     use tempfile::tempdir;
@@ -56,6 +57,7 @@ mod tests {
             verbosity: None,
             ssh_pubkey: None,
             ssh_privatekey: None,
+            pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
 
         // Init repo
@@ -183,11 +185,17 @@ mod tests {
             verbosity: None,
             ssh_pubkey: None,
             ssh_privatekey: None,
+            pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
 
         // Init repo
         init_repo(password, repo_path.clone())?;
-        let (repo, _) = try_open(Some(password.to_string()), None, backend)?;
+        let (repo, _) = try_open(
+            Some(password.to_string()),
+            None,
+            backend,
+            RepoConfig::default(),
+        )?;
 
         // Run snapshot twice
         let snapshot_args = cmd_snapshot::CmdArgs {

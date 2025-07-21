@@ -29,13 +29,15 @@ use crate::{
     backend::new_backend_with_prompt,
     commands::{GlobalArgs, UseSnapshot, find_use_snapshot},
     global::defaults::SHORT_SNAPSHOT_ID_LEN,
-    repository::{self, streamers::SerializedNodeStreamer, verify::verify_snapshot_links},
+    repository::{
+        self, RepoConfig, streamers::SerializedNodeStreamer, verify::verify_snapshot_links,
+    },
     restorer::{self, Resolution, Restorer},
     ui::{
         self, PROGRESS_REFRESH_RATE_HZ, SPINNER_TICK_CHARS, cli, default_bar_draw_target,
         restore_progress::RestoreProgressReporter,
     },
-    utils::{self, format_size},
+    utils::{self, format_size, size},
 };
 
 impl std::fmt::Display for Resolution {
@@ -96,7 +98,11 @@ pub struct CmdArgs {
 pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let pass = utils::get_password_from_file(&global_args.password_file)?;
     let backend = new_backend_with_prompt(global_args, args.dry_run)?;
-    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend)?;
+
+    let config = RepoConfig {
+        pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
+    };
+    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
 
     let (snapshot_id, snapshot) = match find_use_snapshot(repo.clone(), &args.snapshot) {
         Ok(Some((id, snap))) => (id, snap),

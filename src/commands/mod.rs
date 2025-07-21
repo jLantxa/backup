@@ -20,7 +20,10 @@ use anyhow::{Error, Result, anyhow, bail};
 use clap::{ArgGroup, Parser, Subcommand};
 
 use crate::{
-    global::{FileType, ID},
+    global::{
+        FileType, ID,
+        defaults::{DEFAULT_DEFAULT_PACK_SIZE_MIB, DEFAULT_MAX_PACK_SIZE_MIB},
+    },
     repository::{
         RepositoryBackend,
         snapshot::{Snapshot, SnapshotStreamer},
@@ -71,6 +74,18 @@ pub enum Command {
     Verify(cmd_verify::CmdArgs),
 }
 
+fn pack_size_parser(s: &str) -> Result<f32> {
+    let val = s.parse::<f32>()?;
+    if val <= 0.0 || val >= (4.0 * 1024.0) {
+        bail!(
+            "The pack size must be between 0 and {} MiB",
+            DEFAULT_MAX_PACK_SIZE_MIB
+        );
+    }
+
+    Ok(val)
+}
+
 #[derive(Parser, Debug)]
 #[clap(group = ArgGroup::new("verbosity_group").multiple(true))]
 pub struct GlobalArgs {
@@ -89,6 +104,10 @@ pub struct GlobalArgs {
     /// Path to a file to read the repository password
     #[clap(short = 'p', long, value_parser)]
     pub password_file: Option<PathBuf>,
+
+    /// Pack target size in MiB
+    #[clap(long = "pack-size", value_parser = pack_size_parser, default_value_t = DEFAULT_DEFAULT_PACK_SIZE_MIB)]
+    pub pack_size_mib: f32,
 
     /// Path to a KeyFile
     #[clap(short = 'k', long = "key-file", value_parser)]
