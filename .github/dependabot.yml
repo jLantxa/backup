@@ -18,4 +18,4 @@ updates:
       - "dependencies"
       - "dependabot-all-updates"
       
-    versioning-strategy: "lockfile-only"
+    versioning-strategy: "increase-if-necessary"
