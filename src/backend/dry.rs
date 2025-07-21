@@ -124,4 +124,8 @@ impl StorageBackend for DryBackend {
     fn seek_read_from_end(&self, path: &Path, offset: i64, length: u64) -> Result<Vec<u8>> {
         self.backend.seek_read_from_end(path, offset, length)
     }
+
+    fn lstat(&self, path: &Path) -> Result<super::FileAttr> {
+        self.backend.lstat(path)
+    }
 }

@@ -119,7 +119,24 @@ pub fn run_with_repo(
     if args.dry_run {
         ui::cli::log!("{} GC not executed", "[DRY RUN]".bold().purple());
     } else {
-        plan.execute()?;
+        let deleted_size = plan.execute()?;
+
+        // Report freed up space
+        if deleted_size >= 0 {
+            ui::cli::log!(
+                "Freed space: {}",
+                utils::format_size(deleted_size.unsigned_abs(), 3)
+                    .bold()
+                    .green()
+            );
+        } else {
+            ui::cli::log!(
+                "Added space: {}",
+                utils::format_size(deleted_size.unsigned_abs(), 3)
+                    .bold()
+                    .yellow()
+            );
+        }
 
         if args.verify {
             ui::cli::log!();

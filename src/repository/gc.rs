@@ -17,7 +17,10 @@
 use std::{
     collections::{BTreeSet, HashMap},
     path::PathBuf,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -28,7 +31,7 @@ use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterato
 
 use crate::{
     global::{
-        self, ID,
+        self, FileType, ID, SaveID,
         defaults::{DEFAULT_MIN_PACK_SIZE_FACTOR, MAX_PACK_SIZE},
     },
     repository::{
@@ -149,7 +152,10 @@ pub fn scan(repo: Arc<dyn RepositoryBackend>, tolerance: f32) -> Result<Plan> {
 impl Plan {
     /// Execute the plan. Calling this method consumes the plan so it cannot be
     /// executed more than once.
-    pub fn execute(mut self) -> Result<()> {
+    pub fn execute(mut self) -> Result<i64> {
+        let mut deleted_size = 0;
+        let mut added_size = 0;
+
         // Append small packs to the obsolete pack list. Do this only if there are
         // at least 2 packs that can be merged.
         // Small packs will not always be merged with other packs. If all other packs
@@ -160,25 +166,27 @@ impl Plan {
             self.obsolete_packs.append(&mut self.small_packs);
         }
 
-        self.delete_unused_packs()?;
+        deleted_size += self.delete_unused_packs()?;
 
         // No need to repack and rewrite the indices if there are no obsolete packs
         if !self.obsolete_packs.is_empty() {
             self.repo
                 .init_pack_saver(global::defaults::DEFAULT_WRITE_CONCURRENCY);
 
-            self.repack()?;
-            self.repo.flush()?;
+            added_size += self.repack()?;
+            let (_, encoded) = self.repo.flush()?;
             self.repo.finalize_pack_saver();
 
-            self.delete_old_indices()?;
-            self.delete_obsolete_packs()?;
+            added_size += encoded;
+
+            deleted_size += self.delete_old_indices()?;
+            deleted_size += self.delete_obsolete_packs()?;
         }
 
-        Ok(())
+        Ok((deleted_size - added_size) as i64)
     }
 
-    fn delete_unused_packs(&self) -> Result<()> {
+    fn delete_unused_packs(&self) -> Result<u64> {
         let unused_pack_delete_bar = ProgressBar::with_draw_target(
             Some(self.unused_packs.len() as u64),
             default_bar_draw_target(),
@@ -190,17 +198,18 @@ impl Plan {
                 .progress_chars("=> "),
         );
 
+        let mut deleted_size = 0;
         for id in &self.unused_packs {
-            self.repo.delete_file(global::FileType::Object, id)?;
+            deleted_size += self.repo.delete_file(FileType::Object, id)?;
             unused_pack_delete_bar.inc(1);
         }
         unused_pack_delete_bar.finish_and_clear();
         ui::cli::log!("Deleted {} unused packs", unused_pack_delete_bar.position());
 
-        Ok(())
+        Ok(deleted_size)
     }
 
-    fn repack(&self) -> Result<()> {
+    fn repack(&self) -> Result<u64> {
         // Collect information about the blobs to repack. Since we will rewrite the index, we will
         // lose this information.
         let mut repack_blob_info = HashMap::new();
@@ -235,6 +244,8 @@ impl Plan {
                 .progress_chars("=> "),
         );
 
+        let added_size = AtomicU64::new(0);
+
         const REPACK_CONCURRENCY: usize = 4;
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(REPACK_CONCURRENCY)
@@ -244,16 +255,16 @@ impl Plan {
             repack_blob_info.into_par_iter().try_for_each(
                 |(blob_id, (pack_id, blob_type, offset, length))| {
                     let data = self.repo.read_from_file(
-                        global::FileType::Object,
+                        FileType::Object,
                         &pack_id,
                         offset as u64,
                         length as u64,
                     )?;
-                    self.repo.save_blob(
-                        blob_type,
-                        data,
-                        global::SaveID::WithID(blob_id.clone()),
-                    )?;
+                    let (_, (_, encoded_data), (_, encoded_meta)) =
+                        self.repo
+                            .save_blob(blob_type, data, SaveID::WithID(blob_id.clone()))?;
+                    added_size.fetch_add(encoded_data + encoded_meta, Ordering::AcqRel);
+
                     repack_bar.inc(1);
                     Ok(())
                 },
@@ -266,10 +277,10 @@ impl Plan {
             bail!("An error occurred during repacking: {}", e);
         }
 
-        Ok(())
+        Ok(added_size.load(Ordering::Relaxed))
     }
 
-    fn delete_old_indices(&mut self) -> Result<()> {
+    fn delete_old_indices(&mut self) -> Result<u64> {
         // Delete obsolete index files
         // Make sure that the new index files don't overlap the files to delete.
         // This can happen if an index did not change while repacking.
@@ -287,8 +298,10 @@ impl Plan {
                 .progress_chars("=> "),
         );
 
+        let deleted_size = AtomicU64::new(0);
         self.index_ids.par_iter().for_each(|id| {
-            let _ = self.repo.delete_file(crate::global::FileType::Index, id);
+            let size_res = self.repo.delete_file(FileType::Index, id);
+            deleted_size.fetch_add(size_res.unwrap_or(0), Ordering::AcqRel);
             index_delete_bar.inc(1);
         });
         index_delete_bar.finish_and_clear();
@@ -297,10 +310,10 @@ impl Plan {
             index_delete_bar.position()
         );
 
-        Ok(())
+        Ok(deleted_size.load(Ordering::Relaxed))
     }
 
-    fn delete_obsolete_packs(&self) -> Result<()> {
+    fn delete_obsolete_packs(&self) -> Result<u64> {
         // Delete obsolete pack files
         let obsolete_pack_delete_bar = ProgressBar::with_draw_target(
             Some(self.obsolete_packs.len() as u64),
@@ -313,8 +326,10 @@ impl Plan {
                 .progress_chars("=> "),
         );
 
+        let deleted_size = AtomicU64::new(0);
         self.obsolete_packs.par_iter().for_each(|id| {
-            let _ = self.repo.delete_file(crate::global::FileType::Object, id);
+            let size_res = self.repo.delete_file(FileType::Object, id);
+            deleted_size.fetch_add(size_res.unwrap_or(0), Ordering::AcqRel);
             obsolete_pack_delete_bar.inc(1);
         });
         obsolete_pack_delete_bar.finish_and_clear();
@@ -323,7 +338,7 @@ impl Plan {
             obsolete_pack_delete_bar.position()
         );
 
-        Ok(())
+        Ok(deleted_size.load(Ordering::Relaxed))
     }
 }
 
