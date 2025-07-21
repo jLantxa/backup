@@ -28,7 +28,11 @@ pub(crate) const BLOBS_PER_INDEX_FILE: usize = 65535;
 
 // -- Packing --
 /// Minimum pack size before flushing to the backend.
-pub const MAX_PACK_SIZE: u64 = 16 * size::MiB;
+pub const DEFAULT_DEFAULT_PACK_SIZE_MIB: f32 = 16.0;
+pub const DEFAULT_PACK_SIZE: u64 = (DEFAULT_DEFAULT_PACK_SIZE_MIB * size::MiB as f32) as u64;
+pub const DEFAULT_MAX_PACK_SIZE_MIB: f32 = 4.0 * 1024.0;
+pub const DEFAULT_MAX_PACK_SIZE: u64 = (DEFAULT_MAX_PACK_SIZE_MIB * size::MiB as f32) as u64 - 1;
+
 pub(crate) const HEADER_BLOB_MULTIPLE: usize = 64;
 
 // -- Chunking --
@@ -40,11 +44,17 @@ pub(crate) const AVG_CHUNK_SIZE: u64 = size::MiB;
 pub(crate) const MAX_CHUNK_SIZE: u64 = 8 * size::MiB;
 
 // -- Display --
+/// Display length for the repository ID in bytes
 pub(crate) const SHORT_REPO_ID_LEN: usize = 5;
+
+/// Display length for a Snapshot ID in bytes
 pub(crate) const SHORT_SNAPSHOT_ID_LEN: usize = 4;
 
 pub(crate) const DEFAULT_VERBOSITY: u32 = 1;
 
 // -- Garbage collection --
-pub(crate) const DEFAULT_GC_TOLERANCE: f32 = 0.05; // In [0-100] %
-pub(crate) const DEFAULT_MIN_PACK_SIZE_FACTOR: f32 = 0.05; // Repack files smaller than this factor of the max pack size
+/// Percentage of garbage to tolerate per pack
+pub(crate) const DEFAULT_GC_TOLERANCE: f32 = 0.0; // [0 - 1]
+
+/// Repack files smaller than this factor of the max pack size
+pub(crate) const DEFAULT_MIN_PACK_SIZE_FACTOR: f32 = 0.05;

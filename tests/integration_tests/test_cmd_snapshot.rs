@@ -22,7 +22,7 @@ mod tests {
     use anyhow::{Context, Result};
     use mapache::{
         commands::{self, GlobalArgs, UseSnapshot, cmd_restore, cmd_snapshot},
-        global::set_global_opts_with_args,
+        global::{defaults::DEFAULT_DEFAULT_PACK_SIZE_MIB, set_global_opts_with_args},
         restorer::Resolution,
     };
 
@@ -56,6 +56,7 @@ mod tests {
             verbosity: None,
             ssh_pubkey: None,
             ssh_privatekey: None,
+            pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
 
         // Init repo
@@ -159,6 +160,7 @@ mod tests {
             verbosity: None,
             ssh_pubkey: None,
             ssh_privatekey: None,
+            pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
 
         // Init repo
@@ -235,6 +237,7 @@ mod tests {
             verbosity: None,
             ssh_pubkey: None,
             ssh_privatekey: None,
+            pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
         set_global_opts_with_args(&global);
 
@@ -338,6 +341,7 @@ mod tests {
             verbosity: None,
             ssh_pubkey: None,
             ssh_privatekey: None,
+            pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
         set_global_opts_with_args(&global);
 

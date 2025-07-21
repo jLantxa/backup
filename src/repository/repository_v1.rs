@@ -26,10 +26,7 @@ use parking_lot::RwLock;
 
 use crate::{
     backend::StorageBackend,
-    global::{
-        self, BlobType, FileType, SaveID,
-        defaults::{MAX_PACK_SIZE, SHORT_REPO_ID_LEN},
-    },
+    global::{self, BlobType, FileType, SaveID, defaults::SHORT_REPO_ID_LEN},
     repository::{
         MANIFEST_PATH,
         packer::{PackSaver, Packer},
@@ -39,7 +36,7 @@ use crate::{
 };
 
 use super::{
-    ID, KEYS_DIR, RepoVersion, RepositoryBackend,
+    ID, KEYS_DIR, RepoConfig, RepoVersion, RepositoryBackend,
     index::{Index, IndexFile, MasterIndex},
     keys,
     manifest::Manifest,
@@ -120,13 +117,11 @@ impl RepositoryBackend for Repository {
     fn open(
         backend: Arc<dyn StorageBackend>,
         secure_storage: Arc<SecureStorage>,
+        config: RepoConfig,
     ) -> Result<Arc<Self>> {
         let objects_path = PathBuf::from(OBJECTS_DIR);
         let snapshot_path = PathBuf::from(SNAPSHOTS_DIR);
         let index_path = PathBuf::from(INDEX_DIR);
-
-        // Packer defaults
-        let max_packer_size = MAX_PACK_SIZE;
 
         let data_packer = Arc::new(RwLock::new(Packer::new()));
         let tree_packer = Arc::new(RwLock::new(Packer::new()));
@@ -140,7 +135,7 @@ impl RepositoryBackend for Repository {
             index_path,
             keys_path: PathBuf::from(KEYS_DIR),
             secure_storage,
-            max_packer_size,
+            max_packer_size: config.pack_size,
             data_packer,
             tree_packer,
             pack_saver: Arc::new(RwLock::new(None)),

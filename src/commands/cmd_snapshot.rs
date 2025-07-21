@@ -32,7 +32,7 @@ use crate::{
     commands::{EMPTY_TAG_MARK, find_use_snapshot, parse_tags},
     global::{self, ID, SaveID, defaults::SHORT_SNAPSHOT_ID_LEN},
     repository::{
-        self,
+        self, RepoConfig,
         snapshot::{SnapshotSummary, SnapshotTuple},
         streamers::FSNodeStreamer,
     },
@@ -41,7 +41,7 @@ use crate::{
         snapshot_progress::SnapshotProgressReporter,
         table::{Alignment, Table},
     },
-    utils::{self, format_size},
+    utils::{self, format_size, size},
 };
 
 use super::{GlobalArgs, UseSnapshot};
@@ -95,7 +95,11 @@ pub struct CmdArgs {
 pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let pass = utils::get_password_from_file(&global_args.password_file)?;
     let backend = new_backend_with_prompt(global_args, args.dry_run)?;
-    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend)?;
+
+    let config = RepoConfig {
+        pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
+    };
+    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
 
     let start = Instant::now();
 
