@@ -242,12 +242,15 @@ impl RepositoryBackend for Repository {
         Ok(data)
     }
 
-    fn delete_file(&self, file_type: FileType, id: &ID) -> Result<()> {
+    fn delete_file(&self, file_type: FileType, id: &ID) -> Result<u64> {
         assert_ne!(file_type, FileType::Key);
         assert_ne!(file_type, FileType::Manifest);
 
         let path = self.get_path(file_type, id);
-        self.backend.remove_file(&path)
+        let size = self.backend.lstat(&path)?.size;
+        self.backend.remove_file(&path)?;
+
+        Ok(size.unwrap_or(0))
     }
 
     fn remove_snapshot(&self, id: &ID) -> Result<()> {

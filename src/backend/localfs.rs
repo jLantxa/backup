@@ -21,6 +21,8 @@ use std::{
 
 use anyhow::{Context, Result};
 
+use crate::backend::FileAttr;
+
 use super::StorageBackend;
 
 /// A local file system
@@ -220,6 +222,20 @@ impl StorageBackend for LocalFS {
         })?;
 
         Ok(buffer)
+    }
+
+    fn lstat(&self, path: &Path) -> Result<super::FileAttr> {
+        let full_path = self.full_path(path);
+        let meta = std::fs::symlink_metadata(&full_path)?;
+
+        Ok(FileAttr {
+            size: Some(meta.len()),
+            uid: None,
+            gid: None,
+            perm: None,
+            atime: Some(meta.accessed()?),
+            mtime: Some(meta.modified()?),
+        })
     }
 }
 

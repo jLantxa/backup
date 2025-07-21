@@ -97,7 +97,7 @@ pub trait RepositoryBackend: Sync + Send {
     fn load_file(&self, file_type: FileType, id: &ID) -> Result<Vec<u8>>;
 
     /// Deletes a file from the repository
-    fn delete_file(&self, file_type: FileType, id: &ID) -> Result<()>;
+    fn delete_file(&self, file_type: FileType, id: &ID) -> Result<u64>;
 
     fn list_objects(&self) -> Result<BTreeSet<ID>>;
 

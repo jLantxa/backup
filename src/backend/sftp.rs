@@ -19,6 +19,7 @@ use std::{
     net::TcpStream,
     path::{Path, PathBuf},
     sync::Arc,
+    time::{Duration, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -489,5 +490,23 @@ impl StorageBackend for SftpBackend {
         file.read_exact(&mut contents)
             .with_context(|| format!("Failed to seek read file {path:?}\' in sftp backend"))?;
         Ok(contents)
+    }
+
+    fn lstat(&self, path: &Path) -> Result<super::FileAttr> {
+        let full_path = self.full_path(path);
+
+        let conn = self.pool.get().unwrap();
+        let meta = conn.sftp().lstat(&full_path)?;
+
+        Ok(super::FileAttr {
+            size: meta.size,
+            uid: meta.uid,
+            gid: meta.gid,
+            perm: meta.perm,
+            atime: meta
+                .atime.map(|time| UNIX_EPOCH + Duration::from_secs(time)),
+            mtime: meta
+                .mtime.map(|time| UNIX_EPOCH + Duration::from_secs(time)),
+        })
     }
 }

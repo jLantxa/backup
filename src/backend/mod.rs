@@ -22,6 +22,7 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
+    time::SystemTime,
 };
 
 use crate::{backend::sftp::SftpBackend, commands::GlobalArgs};
@@ -30,6 +31,15 @@ use dry::DryBackend;
 use localfs::LocalFS;
 
 use crate::{ui, utils::url::Url};
+
+pub struct FileAttr {
+    pub size: Option<u64>,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
+    pub perm: Option<u32>,
+    pub atime: Option<SystemTime>,
+    pub mtime: Option<SystemTime>,
+}
 
 /// Abstraction of a storage backend.
 ///
@@ -84,6 +94,8 @@ pub trait StorageBackend: Send + Sync {
 
     // Returns true if the path is a directory or an error if the path does not exist.
     fn is_dir(&self, path: &Path) -> bool;
+
+    fn lstat(&self, path: &Path) -> Result<FileAttr>;
 }
 
 pub fn new_backend_with_prompt(
