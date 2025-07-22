@@ -556,21 +556,24 @@ impl MasterIndex {
 /// Represents the on-disk format for an index file.
 /// This structure is used for serialization and deserialization of index data.
 #[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct IndexFile {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub packs: Vec<IndexFilePack>,
 }
 
 /// Represents a pack's entry within an `IndexFile`.
 #[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct IndexFilePack {
     pub id: ID,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub blobs: Vec<IndexFileBlob>,
 }
 
 /// Represents a blob's entry within an `IndexFilePack`.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct IndexFileBlob {
     pub id: ID,
     #[serde(rename = "type")]

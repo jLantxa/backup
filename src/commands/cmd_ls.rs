@@ -24,11 +24,11 @@ use crate::{
     backend::new_backend_with_prompt,
     commands::{GlobalArgs, UseSnapshot, find_use_snapshot},
     repository::{
-        repo::RepoConfig,
-        repo::Repository,
+        repo::{RepoConfig, Repository},
         streamers::find_serialized_node,
         tree::{Metadata, Node, NodeType, Tree},
     },
+    ui,
     utils::{self, size},
 };
 
@@ -99,10 +99,10 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
 /// List the contents of a node.
 fn ls(path: PathBuf, node: Node, repo: &Repository, args: &CmdArgs) -> Result<()> {
     if !node.is_dir() {
-        println!("{}", node_to_string(&node, args.long, args.human_readable));
+        ui::cli::log!("{}", node_to_string(&node, args.long, args.human_readable));
     } else {
         if args.recursive {
-            println!("{}:", path.display());
+            ui::cli::log!("{}:", path.display());
         }
 
         let tree_id = node.tree;
@@ -124,7 +124,7 @@ fn ls_tree(
 ) -> Result<()> {
     tree.nodes.sort_by_key(|node| node.name.to_lowercase());
     for node in &tree.nodes {
-        println!("{}", node_to_string(node, args.long, args.human_readable))
+        ui::cli::log!("{}", node_to_string(node, args.long, args.human_readable))
     }
 
     if args.recursive {
@@ -142,13 +142,13 @@ fn ls_tree(
                 let mut tree = Tree::load_from_repo(repo, &tree_id)?;
                 tree.nodes.sort_by_key(|node| node.name.to_lowercase());
 
-                println!();
+                ui::cli::log!();
 
                 if args.recursive {
-                    println!("{}:", current_path.display());
+                    ui::cli::log!("{}:", current_path.display());
                 }
                 for node in &tree.nodes {
-                    println!("{}", node_to_string(node, args.long, args.human_readable))
+                    ui::cli::log!("{}", node_to_string(node, args.long, args.human_readable))
                 }
                 for node in tree.nodes.into_iter().rev() {
                     if node.tree.is_some() {

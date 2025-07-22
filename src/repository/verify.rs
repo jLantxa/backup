@@ -30,13 +30,19 @@ use crate::{
 
 /// Verify the checksum and contents of a blob with a known ID in the repository.
 pub fn verify_blob(repo: &Repository, id: &ID) -> Result<u64> {
-    let blob_data = repo.load_blob(id)?;
-    let checksum = utils::calculate_hash(&blob_data);
-    if checksum != id.0[..] {
-        bail!("Invalid blob checksum");
-    }
+    let blob_entry = repo.index().read().get(id);
+    match blob_entry {
+        Some((pack_id, _blob_type, offset, length, _raw_length)) => {
+            let blob_data = repo.load_from_pack(&pack_id, offset, length)?;
+            let checksum = utils::calculate_hash(&blob_data);
+            if checksum != id.0[..] {
+                bail!("Invalid blob checksum");
+            }
 
-    Ok(blob_data.len() as u64)
+            Ok(blob_data.len() as u64)
+        }
+        None => bail!("Could not find blob {:?} in index", id),
+    }
 }
 
 pub fn verify_data(id: &ID, data: &[u8], expected_len: Option<u32>) -> Result<u64> {

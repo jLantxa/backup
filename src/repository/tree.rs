@@ -33,9 +33,10 @@ use crate::global::ID;
 use crate::{global::BlobType, repository::repo::Repository};
 
 /// The type of a node (file, directory, symlink, etc.)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum NodeType {
+    #[default]
     File,
     Directory,
     Symlink,
@@ -46,7 +47,8 @@ pub enum NodeType {
 }
 
 /// A node in the file system tree. This struct is serialized; keep field order stable.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Node {
     pub name: String,
 
@@ -65,7 +67,8 @@ pub struct Node {
     pub tree: Option<ID>, // For directories
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SymlinkInfo {
     pub target_path: PathBuf, // Target path
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -73,6 +76,7 @@ pub struct SymlinkInfo {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Tree {
     pub nodes: Vec<Node>,
 }
@@ -83,6 +87,7 @@ pub struct Tree {
 /// altering the hash of the node. The accessed time will be updated after restoring the
 /// file anyway. We don't include it in the metadata, but we still have it here.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Eq, PartialEq)]
+#[serde(default)]
 pub struct Metadata {
     /// Size in bytes
     pub size: u64,
@@ -318,12 +323,8 @@ impl Tree {
         self.nodes.sort_by_key(|node| node.name.clone());
 
         let tree_json = serde_json::to_string(self)?.as_bytes().to_vec();
-        let (id, (raw_data_size, encoded_data_size), (raw_meta_size, encoded_meta_size)) = repo
-            .save_blob(
-                BlobType::Tree,
-                tree_json,
-                crate::global::SaveID::CalculateID,
-            )?;
+        let (id, (raw_data_size, encoded_data_size), (raw_meta_size, encoded_meta_size)) =
+            repo.encode_and_save_blob(BlobType::Tree, tree_json)?;
 
         Ok((
             id,

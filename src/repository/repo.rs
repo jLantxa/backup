@@ -282,21 +282,23 @@ impl Repository {
     }
 
     /// Saves a blob in the repository. This blob can be packed with other blobs in an object file.
-    /// Returns a tuple (`ID`, raw_size, encoded_size)
+    /// Returns a tuple (`ID`, (raw_size, encoded_size))
     #[allow(clippy::type_complexity)]
     pub fn save_blob(
         &self,
         blob_type: BlobType,
         data: Vec<u8>,
+        raw_length: u32,
         save_id: SaveID,
-    ) -> Result<(ID, (u64, u64), (u64, u64))> {
+    ) -> Result<(ID, (u64, u64))> {
         let packer = match blob_type {
             BlobType::Data => &self.data_packer,
             BlobType::Tree => &self.tree_packer,
             BlobType::Padding => panic!("Internal error: blob type not allowed"),
         };
 
-        let raw_size = data.len() as u64;
+        let blob_length = data.len() as u64;
+
         let id = match save_id {
             SaveID::CalculateID => ID::from_content(&data),
             SaveID::WithID(id) => id,
@@ -308,15 +310,12 @@ impl Repository {
 
         // If the blob was already pending, return early, as we are finished here.
         if blob_exists {
-            return Ok((id, (0, 0), (0, 0)));
+            return Ok((id, (0, 0)));
         }
-
-        let data = self.secure_storage.encode(&data)?;
-        let encoded_size = data.len() as u64;
 
         packer
             .write()
-            .add_blob(id.clone(), blob_type, data, raw_size, encoded_size);
+            .add_blob(id.clone(), blob_type, data, raw_length as u64, blob_length);
 
         // Flush if the packer is considered full
         let packer_meta_size = if packer.read().size() > self.max_packer_size {
@@ -325,7 +324,25 @@ impl Repository {
             (0, 0)
         };
 
-        Ok((id, (raw_size, encoded_size), packer_meta_size))
+        Ok((id, packer_meta_size))
+    }
+
+    pub fn encode_and_save_blob(
+        &self,
+        blob_type: BlobType,
+        data: Vec<u8>,
+    ) -> Result<(ID, (u64, u64), (u64, u64))> {
+        let raw_length = data.len() as u64;
+        let data = self.secure_storage.encode(&data)?;
+        let encoded_length = data.len() as u64;
+        let (id, (raw_packer_meta, encoded_packer_meta)) =
+            self.save_blob(blob_type, data, raw_length as u32, SaveID::CalculateID)?;
+
+        Ok((
+            id,
+            (raw_length, encoded_length),
+            (raw_packer_meta, encoded_packer_meta),
+        ))
     }
 
     /// Loads a blob from the repository.
@@ -372,7 +389,7 @@ impl Repository {
         let path = self.get_path(file_type, id);
         let data = self.backend.read(&path)?;
 
-        if file_type != FileType::Object {
+        if file_type != FileType::Pack {
             return self.secure_storage.decode(&data);
         }
 
@@ -449,7 +466,7 @@ impl Repository {
 
     /// Loads a pack.
     pub fn load_object(&self, id: &ID) -> Result<Vec<u8>> {
-        self.load_file(FileType::Object, id)
+        self.load_file(FileType::Pack, id)
     }
 
     /// Loads an index file.
@@ -600,7 +617,7 @@ impl Repository {
     fn get_path(&self, file_type: FileType, id: &ID) -> PathBuf {
         let id_hex = id.to_hex();
         match file_type {
-            FileType::Object => Self::get_object_path(&self.objects_path, id),
+            FileType::Pack => Self::get_object_path(&self.objects_path, id),
             FileType::Snapshot => self.snapshot_path.join(id_hex),
             FileType::Index => self.index_path.join(id_hex),
             FileType::Key => self.keys_path.join(id_hex),
@@ -609,13 +626,13 @@ impl Repository {
     }
 
     /// Lists all paths belonging to a file type (objects, snapshots, indices, etc.).
-    fn list_files(&self, file_type: FileType) -> Result<Vec<PathBuf>> {
+    pub fn list_files(&self, file_type: FileType) -> Result<Vec<PathBuf>> {
         match file_type {
             FileType::Snapshot => self.backend.read_dir(&self.snapshot_path),
             FileType::Key => self.backend.read_dir(&self.keys_path),
             FileType::Index => self.backend.read_dir(&self.index_path),
             FileType::Manifest => Ok(vec![PathBuf::from(MANIFEST_PATH)]),
-            FileType::Object => {
+            FileType::Pack => {
                 let mut files = Vec::new();
                 for n in 0x00..(1 << (4 * OBJECTS_DIR_FANOUT)) {
                     let dir_name = self
@@ -695,7 +712,7 @@ impl Repository {
         Ok(())
     }
 
-    fn load_from_pack(&self, id: &ID, offset: u32, length: u32) -> Result<Vec<u8>> {
+    pub fn load_from_pack(&self, id: &ID, offset: u32, length: u32) -> Result<Vec<u8>> {
         let object_path = Self::get_object_path(&self.objects_path, id);
         let data = self
             .backend

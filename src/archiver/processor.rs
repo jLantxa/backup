@@ -145,7 +145,7 @@ pub(crate) fn save_file(
     if node.metadata.size < global::defaults::MIN_CHUNK_SIZE {
         let data = std::fs::read(src_path)?;
         let (id, (raw_data_size, encoded_data_size), (raw_meta_size, encoded_meta_size)) =
-            repo.save_blob(BlobType::Data, data, global::SaveID::CalculateID)?;
+            repo.encode_and_save_blob(BlobType::Data, data)?;
         progress_reporter.written_data_bytes(raw_data_size, encoded_data_size);
         progress_reporter.written_meta_bytes(raw_meta_size, encoded_meta_size);
         progress_reporter.processed_bytes(node.metadata.size);
@@ -181,21 +181,16 @@ fn chunk_and_save_blobs(
     for result in chunker {
         let chunk = result.with_context(|| "Failed to chunk file")?;
 
-        let id: ID = ID::from_content(&chunk.data);
-        chunk_ids.push(id.clone());
-
         let repo_clone = repo.clone();
         let pr = progress_reporter.clone();
 
-        let processed_size = chunk.data.len() as u64;
-        let save_blob_res =
-            repo_clone.save_blob(BlobType::Data, chunk.data, global::SaveID::WithID(id));
-
+        let save_blob_res = repo_clone.encode_and_save_blob(BlobType::Data, chunk.data);
         match save_blob_res {
-            Ok((_id, (raw_data_size, encoded_data_size), (raw_meta_size, encoded_meta_size))) => {
+            Ok((id, (raw_data_size, encoded_data_size), (raw_meta_size, encoded_meta_size))) => {
+                chunk_ids.push(id.clone());
                 pr.written_data_bytes(raw_data_size, encoded_data_size);
                 pr.written_meta_bytes(raw_meta_size, encoded_meta_size);
-                pr.processed_bytes(processed_size);
+                pr.processed_bytes(raw_data_size);
             }
             Err(e) => bail!("Failed to save blob to repository: {:?}", e),
         }
