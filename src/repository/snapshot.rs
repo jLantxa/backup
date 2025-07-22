@@ -30,6 +30,7 @@ use crate::global::ID;
 pub type SnapshotTuple = (ID, Snapshot);
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Snapshot {
     /// The snapshot timestamp is the Local time at which the snapshot was created
     pub timestamp: DateTime<Local>,
@@ -81,6 +82,7 @@ impl Snapshot {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DiffCounts {
     pub new_files: usize,
     pub deleted_files: usize,
@@ -128,6 +130,7 @@ impl DiffCounts {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SnapshotSummary {
     pub processed_items_count: u64, // Number of files processed
     pub processed_bytes: u64,       // Bytes processed (only data)

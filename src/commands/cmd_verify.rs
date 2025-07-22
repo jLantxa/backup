@@ -203,7 +203,7 @@ pub fn verify_snapshot(
     bar.set_draw_target(default_bar_draw_target());
     bar.set_style(
         ProgressStyle::default_bar()
-            .template("[{custom_elapsed}] [{bar:20.cyan/white}] {processed_bytes_formated}  [ETA: {custom_eta}]")
+            .template("[{custom_elapsed}] [{bar:20.cyan/white}] {processed_bytes_formated}  [ETA: {custom_eta}]  {msg}")
             .unwrap()
             .progress_chars("=> ")
             .with_key(
@@ -245,10 +245,10 @@ pub fn verify_snapshot(
                         if !visited_blobs.contains(&blob) {
                             visited_blobs.insert(blob.clone());
                             match verify_blob(repo.as_ref(), &blob) {
-                                Ok(blob_len) => bar.inc(blob_len),
+                                Ok((raw_length, _encoded_length)) => bar.inc(raw_length),
                                 Err(_) => {
                                     error_counter += 1;
-                                    bar.set_message("{error_counter} errors");
+                                    bar.set_message(format!("{error_counter} errors"));
                                 }
                             }
                         }

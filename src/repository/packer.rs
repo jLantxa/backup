@@ -212,7 +212,7 @@ impl Packer {
         secure_storage: &SecureStorage,
         pack_id: &ID,
     ) -> Result<Vec<PackedBlobDescriptor>> {
-        let (_id, pack_path) = repo.find(FileType::Object, &pack_id.to_hex())?;
+        let (_id, pack_path) = repo.find(FileType::Pack, &pack_id.to_hex())?;
         let header_length_bytes: [u8; 4] = backend
             .seek_read_from_end(&pack_path, -4, 4)?
             .as_slice()

@@ -25,7 +25,7 @@ This software is still a work in progress. The format of the repository is unsta
 
 `mapache` is inspired in its design by other similar tools like `git` and [`restic`](https://restic.net/). It implements a content-addressable repository to store and retrieve binary objects and `content-defined chunking` to de-duplicate the contents of files. It uses the v2020 FastCDC algorithm for chunking and deduplication. Each 'backup' is saved as a `Snapshot`. `Snapshots` are independent of each other and they describe the status of your filesystem when you did the backup (files, directories and their metadata). Although the `snapshots` are independent, every new `snapshot` only appends the new information that was different from the already existing `snapshots`.
 
-To provide data protection, all data stored in the repository are encrypted and authenticated using 256-bit AES-GCM, with Argon2 for key derivation.
+To provide data protection, all data stored in the repository are encrypted and authenticated using 256-bit AES-GCM-SIV, with Argon2 for key derivation.
 
 ### Guiding Principles
 
@@ -67,22 +67,18 @@ The second milestone consists of adding features related to repository maintenan
 - [x] `ls` command to list paths in a snapshot.
 - [x] `ssh` authentication with public key for the `sftp` backend.
 
-After that, the plan is to expand the functionality with new options, features, optimizations, and ergonomics. Choosing a name for the tool is also something that should happen at some time –I hope–.
+After that, the plan is to expand the functionality with new options, features, optimizations, and ergonomics.
 
-### 3. *`Smooth mapache`*
+### 3. `Smooth mapache`
 
 The goal of this milestone is to add convenience and quality of like feature. Things that are not strictly necessary but make mapache nicer to use. The real goal is to work towards a stable repository format that allows me to add features in the future without making previous versions incompatible. This includes:
 
 - [x] `amend` command to remove files from existing snapshots and modify metadata.
-- [x] `diff` command to show differences between snapshots
+- [x] `diff` command to show differences between snapshots.
 - [x] `verify` command to verify the integrity of the data stored in the repository.
+- [x] `stats` command to display stats about the repository and its contents.
 - [ ] Key managment.
-
-### Other planned features
-
-This is a non-exhaustive list of features that I want to add:
-
-- [ ] FUSE mount (I don't even know how this works).
+- [ ] FUSE mount.
 
 ## Getting started
 
@@ -118,6 +114,7 @@ Commands:
   diff      Show differences between snapshots
   cat       Print repository objects
   verify    Verify the integrity of the data stored in the repository
+  stats     Display stats about the repository and its contents
   help      Print this message or the help of the given subcommand(s)
 
 Options:
@@ -125,6 +122,7 @@ Options:
       --ssh-pubkey <SSH_PUBKEY>          SSH public key
       --ssh-privatekey <SSH_PRIVATEKEY>  SSH private key
   -p, --password-file <PASSWORD_FILE>    Path to a file to read the repository password
+      --pack-size <PACK_SIZE_MIB>        Pack target size in MiB [default: 16]
   -k, --key-file <KEY>                   Path to a KeyFile
       --quiet                            Disable logging (verbosity = 0)
   -v, --verbosity <VERBOSITY>            Set the verbosity level [0-3]

@@ -185,21 +185,21 @@ impl<'de> Deserialize<'de> for ID {
 }
 
 /// Type of objects that can be stored in a repository.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, FromPrimitive)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, FromPrimitive)]
 #[repr(u8)]
 pub enum BlobType {
     Data = 0x00,
     Tree = 0x01,
 
     /// A padding blob descriptor used for obfuscation. This blob is fake and must be ignored.
-    #[num_enum(default)]
+    #[default]
     Padding = 0xff,
 }
 
 /// Type of objects that can be stored in a Repository
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum FileType {
-    Object,
+    Pack,
     Snapshot,
     Index,
     Key,
@@ -210,7 +210,7 @@ pub enum FileType {
 impl std::fmt::Display for FileType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FileType::Object => write!(f, "object"),
+            FileType::Pack => write!(f, "pack"),
             FileType::Snapshot => write!(f, "snapshot"),
             FileType::Index => write!(f, "index"),
             FileType::Key => write!(f, "key"),

@@ -200,7 +200,7 @@ impl Plan {
 
         let mut deleted_size = 0;
         for id in &self.unused_packs {
-            deleted_size += self.repo.delete_file(FileType::Object, id)?;
+            deleted_size += self.repo.delete_file(FileType::Pack, id)?;
             unused_pack_delete_bar.inc(1);
         }
         unused_pack_delete_bar.finish_and_clear();
@@ -214,12 +214,14 @@ impl Plan {
         // lose this information.
         let mut repack_blob_info = HashMap::new();
         for referenced_blob_id in &self.referenced_blobs {
-            if let Some((pack_id, blob_type, offset, length, _raw_length)) =
+            if let Some((pack_id, blob_type, offset, length, raw_length)) =
                 self.repo.index().read().get(referenced_blob_id)
             {
                 if self.obsolete_packs.contains(&pack_id) {
-                    repack_blob_info
-                        .insert(referenced_blob_id, (pack_id, blob_type, offset, length));
+                    repack_blob_info.insert(
+                        referenced_blob_id,
+                        (pack_id, blob_type, offset, raw_length, length),
+                    );
                 }
             }
         }
@@ -253,17 +255,20 @@ impl Plan {
             .expect("Failed to build thread pool");
         let process_result: Result<()> = pool.install(|| {
             repack_blob_info.into_par_iter().try_for_each(
-                |(blob_id, (pack_id, blob_type, offset, length))| {
+                |(blob_id, (pack_id, blob_type, offset, raw_length, length))| {
                     let data = self.repo.read_from_file(
-                        FileType::Object,
+                        FileType::Pack,
                         &pack_id,
                         offset as u64,
                         length as u64,
                     )?;
-                    let (_, (_, encoded_data), (_, encoded_meta)) =
-                        self.repo
-                            .save_blob(blob_type, data, SaveID::WithID(blob_id.clone()))?;
-                    added_size.fetch_add(encoded_data + encoded_meta, Ordering::AcqRel);
+                    let (_id, (_raw_meta, encoded_meta)) = self.repo.save_blob(
+                        blob_type,
+                        data,
+                        raw_length,
+                        SaveID::WithID(blob_id.clone()),
+                    )?;
+                    added_size.fetch_add(length as u64 + encoded_meta, Ordering::AcqRel);
 
                     repack_bar.inc(1);
                     Ok(())
@@ -328,7 +333,7 @@ impl Plan {
 
         let deleted_size = AtomicU64::new(0);
         self.obsolete_packs.par_iter().for_each(|id| {
-            let size_res = self.repo.delete_file(FileType::Object, id);
+            let size_res = self.repo.delete_file(FileType::Pack, id);
             deleted_size.fetch_add(size_res.unwrap_or(0), Ordering::AcqRel);
             obsolete_pack_delete_bar.inc(1);
         });
