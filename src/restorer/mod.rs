@@ -83,7 +83,6 @@ impl Restorer {
 
         for node_res in node_streamer {
             let (mut path, stream_node) = node_res?;
-            progress_reporter.processing_file(path.clone());
 
             if let Some(prefix) = &opts.strip_prefix {
                 if strip_excludes.contains(&path) {
@@ -121,6 +120,8 @@ impl Restorer {
                 let mtime = stream_node.node.metadata.modified_time;
                 dir_stack.push((path, atime, mtime));
             }
+
+            progress_reporter.processing_file(path.clone());
 
             // Attempt to restore the node.
             if let Err(e) = node_restorer::restore_node_to_path(
