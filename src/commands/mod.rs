@@ -25,7 +25,7 @@ use crate::{
         defaults::{DEFAULT_DEFAULT_PACK_SIZE_MIB, DEFAULT_MAX_PACK_SIZE_MIB},
     },
     repository::{
-        RepositoryBackend,
+        repo::Repository,
         snapshot::{Snapshot, SnapshotStreamer},
     },
 };
@@ -152,7 +152,7 @@ impl std::fmt::Display for UseSnapshot {
 }
 
 pub(crate) fn find_use_snapshot(
-    repo: Arc<dyn RepositoryBackend>,
+    repo: Arc<Repository>,
     use_snapshot: &UseSnapshot,
 ) -> Result<Option<(ID, Snapshot)>> {
     match use_snapshot {

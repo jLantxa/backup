@@ -23,7 +23,7 @@ mod tests {
         backend::localfs::LocalFS,
         commands::{self, GlobalArgs, cmd_init::CmdArgs},
         global::{defaults::DEFAULT_DEFAULT_PACK_SIZE_MIB, set_global_opts_with_args},
-        repository::{self, RepoConfig},
+        repository::{repo::RepoConfig, repo::Repository},
     };
 
     use anyhow::{Context, Result};
@@ -50,9 +50,7 @@ mod tests {
             ssh_privatekey: None,
             pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
-        let args = CmdArgs {
-            repository_version: 1,
-        };
+        let args = CmdArgs {};
         set_global_opts_with_args(&global);
 
         // Init repo
@@ -73,7 +71,7 @@ mod tests {
 
         // Try to open repo
         let backend = Arc::new(LocalFS::new(repo_path));
-        repository::try_open(
+        Repository::try_open(
             Some(password.to_string()),
             None,
             backend,
@@ -106,9 +104,7 @@ mod tests {
             ssh_privatekey: None,
             pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
-        let args = CmdArgs {
-            repository_version: 1,
-        };
+        let args = CmdArgs {};
         set_global_opts_with_args(&global);
 
         // Init repo
@@ -130,7 +126,7 @@ mod tests {
 
         // Try to open repo
         let backend = Arc::new(LocalFS::new(repo_path));
-        repository::try_open(
+        Repository::try_open(
             Some(password.to_string()),
             Some(&keyfile_path),
             backend,

@@ -29,7 +29,7 @@ use {
 
 use crate::{
     repository::{
-        RepositoryBackend,
+        repo::Repository,
         tree::{Node, NodeType},
     },
     ui::{self, restore_progress::RestoreProgressReporter},
@@ -45,7 +45,7 @@ use {
 /// This function does not restore file times for directory nodes. This must be
 /// done in a reparate pass.
 pub(crate) fn restore_node_to_path(
-    repo: &dyn RepositoryBackend,
+    repo: &Repository,
     progress_reporter: Arc<RestoreProgressReporter>,
     node: &Node,
     dst_path: &Path,

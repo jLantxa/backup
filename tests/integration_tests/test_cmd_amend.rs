@@ -24,7 +24,10 @@ mod tests {
         backend::localfs::LocalFS,
         commands::{self, GlobalArgs, UseSnapshot, cmd_amend, cmd_restore, cmd_snapshot},
         global::defaults::DEFAULT_DEFAULT_PACK_SIZE_MIB,
-        repository::{RepoConfig, snapshot::SnapshotStreamer, try_open},
+        repository::{
+            repo::{RepoConfig, Repository},
+            snapshot::SnapshotStreamer,
+        },
     };
 
     use tempfile::tempdir;
@@ -190,7 +193,7 @@ mod tests {
 
         // Init repo
         init_repo(password, repo_path.clone())?;
-        let (repo, _) = try_open(
+        let (repo, _) = Repository::try_open(
             Some(password.to_string()),
             None,
             backend,

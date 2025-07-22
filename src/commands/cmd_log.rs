@@ -24,7 +24,7 @@ use crate::{
     commands::parse_tags,
     global::{self, FileType, ID},
     repository::{
-        self, RepoConfig,
+        repo::{RepoConfig, Repository},
         snapshot::{Snapshot, SnapshotStreamer},
     },
     ui::{
@@ -59,7 +59,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let config = RepoConfig {
         pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
     };
-    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
+    let (repo, _) = Repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
 
     let mut snapshots_sorted: Vec<(ID, Snapshot)> = match &args.snapshot {
         None => SnapshotStreamer::new(repo.clone())?.collect(),

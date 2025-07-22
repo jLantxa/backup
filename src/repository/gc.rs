@@ -34,9 +34,7 @@ use crate::{
         self, FileType, ID, SaveID,
         defaults::{DEFAULT_MIN_PACK_SIZE_FACTOR, DEFAULT_PACK_SIZE},
     },
-    repository::{
-        RepositoryBackend, snapshot::SnapshotStreamer, streamers::SerializedNodeStreamer,
-    },
+    repository::{repo::Repository, snapshot::SnapshotStreamer, streamers::SerializedNodeStreamer},
     ui::{self, PROGRESS_REFRESH_RATE_HZ, SPINNER_TICK_CHARS, default_bar_draw_target},
 };
 
@@ -44,7 +42,7 @@ use crate::{
 /// A plan can be executed to complete the garbage collection process. Once executed, the plan
 /// object is consumed and cannot be used again. This is an intended safety measure.
 pub struct Plan {
-    pub repo: Arc<dyn RepositoryBackend>,
+    pub repo: Arc<Repository>,
     pub total_packs: usize, // Total number of blobs in the repository
     pub referenced_blobs: BTreeSet<ID>, // Blobs referenced by existing snapshots
     pub referenced_packs: BTreeSet<ID>, // Packs referenced by the referenced blobs
@@ -56,7 +54,7 @@ pub struct Plan {
 }
 
 /// Scan the repository and make a plan of what needs to be cleaned.
-pub fn scan(repo: Arc<dyn RepositoryBackend>, tolerance: f32) -> Result<Plan> {
+pub fn scan(repo: Arc<Repository>, tolerance: f32) -> Result<Plan> {
     let (referenced_blobs, referenced_packs) = get_referenced_blobs_and_packs(repo.clone())?;
 
     let mut keep_packs: BTreeSet<ID> = repo.list_objects()?;
@@ -343,9 +341,7 @@ impl Plan {
 }
 
 /// Returns all blobs and packs referenced by all existing snapshots in the repository.
-fn get_referenced_blobs_and_packs(
-    repo: Arc<dyn RepositoryBackend>,
-) -> Result<(BTreeSet<ID>, BTreeSet<ID>)> {
+fn get_referenced_blobs_and_packs(repo: Arc<Repository>) -> Result<(BTreeSet<ID>, BTreeSet<ID>)> {
     let mut referenced_blobs = BTreeSet::new();
     let mut referenced_packs = BTreeSet::new();
     let index = repo.index();

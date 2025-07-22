@@ -23,7 +23,7 @@ use rand::Rng;
 use crate::{
     backend::StorageBackend,
     global::{BlobType, FileType, ID, SaveID, defaults::HEADER_BLOB_MULTIPLE},
-    repository::{RepositoryBackend, storage::SecureStorage},
+    repository::{repo::Repository, storage::SecureStorage},
     utils,
 };
 
@@ -188,7 +188,7 @@ impl Packer {
     /// Parses the header for a pack with a given ID. This function only reads the header bytes from
     /// the pack file using the seek read trait function from the backend.
     pub fn parse_pack_header(
-        repo: &dyn RepositoryBackend,
+        repo: &Repository,
         backend: &dyn StorageBackend,
         secure_storage: &SecureStorage,
         pack_id: &ID,

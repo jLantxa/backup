@@ -24,10 +24,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     global::{self, BlobType, ID},
+    repository::repo::Repository,
     utils::indexset::IndexSet,
 };
 
-use super::{RepositoryBackend, packer::PackedBlobDescriptor};
+use super::packer::PackedBlobDescriptor;
 
 /// Represents the location and size of a blob within a pack file.
 #[derive(Debug, Clone)]
@@ -221,7 +222,7 @@ impl Index {
 
     /// Saves the index to the repository.
     /// Returns the total uncompressed and compressed sizes of the saved index files.
-    pub fn finalize_and_save(&mut self, repo: &dyn RepositoryBackend) -> Result<(u64, u64)> {
+    pub fn finalize_and_save(&mut self, repo: &Repository) -> Result<(u64, u64)> {
         self.finalize();
 
         // Don't do anything if the index is empty.
@@ -253,7 +254,7 @@ impl Index {
             });
         }
 
-        let mut index_file = IndexFile::new();
+        let mut index_file = IndexFile::default();
 
         // Iterate through packs in the order they were inserted into `pack_ids`.
         // This ensures a consistent ordering of packs in the generated index files.
@@ -398,7 +399,7 @@ impl MasterIndex {
     /// or that a new one will be created as part of the overall backup process if needed.
     pub fn add_pack(
         &mut self,
-        repo: &dyn RepositoryBackend,
+        repo: &Repository,
         pack_id: &ID,
         packed_blob_descriptors: Vec<PackedBlobDescriptor>, // Take ownership as it's consumed
     ) -> Result<(u64, u64)> {
@@ -431,7 +432,7 @@ impl MasterIndex {
     /// Finalized indices are not saved again.
     ///
     /// Returns the total raw and encoded sizes of the saved index files.
-    pub fn save(&mut self, repo: &dyn RepositoryBackend) -> Result<(u64, u64)> {
+    pub fn save(&mut self, repo: &Repository) -> Result<(u64, u64)> {
         let mut uncompressed_size: u64 = 0;
         let mut compressed_size: u64 = 0;
 
@@ -548,14 +549,8 @@ pub struct IndexFile {
     pub packs: Vec<IndexFilePack>,
 }
 
-impl IndexFile {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
 /// Represents a pack's entry within an `IndexFile`.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct IndexFilePack {
     pub id: ID,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

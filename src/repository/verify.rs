@@ -22,14 +22,14 @@ use crate::{
     backend::StorageBackend,
     global::ID,
     repository::{
-        RepositoryBackend, packer::Packer, storage::SecureStorage,
+        packer::Packer, repo::Repository, storage::SecureStorage,
         streamers::SerializedNodeStreamer, tree::NodeType,
     },
     utils,
 };
 
 /// Verify the checksum and contents of a blob with a known ID in the repository.
-pub fn verify_blob(repo: &dyn RepositoryBackend, id: &ID) -> Result<u64> {
+pub fn verify_blob(repo: &Repository, id: &ID) -> Result<u64> {
     let blob_data = repo.load_blob(id)?;
     let checksum = utils::calculate_hash(&blob_data);
     if checksum != id.0[..] {
@@ -55,7 +55,7 @@ pub fn verify_data(id: &ID, data: &[u8], expected_len: Option<u32>) -> Result<u6
 
 /// Verify the checksum and contents of a pack  with a known ID in the repository.
 pub fn verify_pack(
-    repo: &dyn RepositoryBackend,
+    repo: &Repository,
     backend: &dyn StorageBackend,
     secure_storage: &SecureStorage,
     id: &ID,
@@ -89,7 +89,7 @@ pub fn verify_pack(
 /// This function only verifies that all IDs referenced in a snapshot are listed in the  master
 /// index, but it doesn't check the actual data. The blobs or packs could actually not exist
 /// or be corrupted.
-pub fn verify_snapshot_links(repo: Arc<dyn RepositoryBackend>, snapshot_id: &ID) -> Result<()> {
+pub fn verify_snapshot_links(repo: Arc<Repository>, snapshot_id: &ID) -> Result<()> {
     let snapshot_data = repo.load_file(crate::global::FileType::Snapshot, snapshot_id)?;
     let checksum = utils::calculate_hash(snapshot_data);
     if checksum != snapshot_id.0[..] {

@@ -22,14 +22,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     commands::EMPTY_TAG_MARK,
-    repository::{RepositoryBackend, streamers::NodeDiff},
+    repository::{repo::Repository, streamers::NodeDiff},
 };
 
-use super::ID;
+use crate::global::ID;
 
 pub type SnapshotTuple = (ID, Snapshot);
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Snapshot {
     /// The snapshot timestamp is the Local time at which the snapshot was created
     pub timestamp: DateTime<Local>,
@@ -151,12 +151,12 @@ pub struct SnapshotSummary {
 /// This streamer loads Snapshots on demand.
 pub struct SnapshotStreamer {
     snapshot_ids: Vec<ID>,
-    repo: Arc<dyn RepositoryBackend>,
+    repo: Arc<Repository>,
 }
 
 impl SnapshotStreamer {
     /// Creates a new SnapshotStreamer. It needs a repo to load snapshots.
-    pub fn new(repo: Arc<dyn RepositoryBackend>) -> Result<Self> {
+    pub fn new(repo: Arc<Repository>) -> Result<Self> {
         Ok(Self {
             snapshot_ids: repo.list_snapshot_ids()?,
             repo,

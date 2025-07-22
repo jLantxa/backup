@@ -22,12 +22,9 @@ use std::{
 
 use anyhow::{Context, Result, anyhow, bail};
 
-use crate::{global::ID, utils};
+use crate::{global::ID, repository::repo::Repository, utils};
 
-use super::{
-    RepositoryBackend,
-    tree::{Node, Tree},
-};
+use super::tree::{Node, Tree};
 
 #[derive(Debug)]
 pub struct StreamNode {
@@ -201,7 +198,7 @@ impl Iterator for FSNodeStreamer {
 /// children, are never explored nor emitted. If the include list is not empty, only nodes in the same branch
 /// (children and parents (intermediate nodes to reach the included path)) as those paths will be emitted.
 pub struct SerializedNodeStreamer {
-    repo: Arc<dyn RepositoryBackend>,
+    repo: Arc<Repository>,
     stack: Vec<StreamNodeInfo>,
     include: Option<Vec<PathBuf>>,
     exclude: Option<Vec<PathBuf>>,
@@ -209,7 +206,7 @@ pub struct SerializedNodeStreamer {
 
 impl SerializedNodeStreamer {
     pub fn new(
-        repo: Arc<dyn RepositoryBackend>,
+        repo: Arc<Repository>,
         root_id: Option<ID>,
         base_path: PathBuf,
         include: Option<Vec<PathBuf>>,
@@ -460,7 +457,7 @@ where
 }
 
 pub fn find_serialized_node(
-    repo: &dyn RepositoryBackend,
+    repo: &Repository,
     base_tree_id: &ID,
     path: &Path,
 ) -> Result<Option<Node>> {

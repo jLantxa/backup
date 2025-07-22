@@ -26,7 +26,7 @@ use crate::{
     commands::GlobalArgs,
     global::{ID, defaults::SHORT_SNAPSHOT_ID_LEN},
     repository::{
-        self, RepoConfig, RepositoryBackend,
+        repo::{RepoConfig, Repository},
         snapshot::SnapshotStreamer,
         streamers::SerializedNodeStreamer,
         tree::NodeType,
@@ -61,7 +61,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
         pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
     };
     let (repo, secure_storage) =
-        repository::try_open(pass, global_args.key.as_ref(), backend.clone(), config)?;
+        Repository::try_open(pass, global_args.key.as_ref(), backend.clone(), config)?;
 
     let start = Instant::now();
 
@@ -184,7 +184,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
 /// This function will verify the checksum of the Snapshot object and the contents of all blobs
 /// referenced by it.
 pub fn verify_snapshot(
-    repo: Arc<dyn RepositoryBackend>,
+    repo: Arc<Repository>,
     snapshot_id: &ID,
     visited_blobs: &mut BTreeSet<ID>,
 ) -> Result<()> {

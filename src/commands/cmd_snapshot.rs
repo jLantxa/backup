@@ -32,7 +32,8 @@ use crate::{
     commands::{EMPTY_TAG_MARK, find_use_snapshot, parse_tags},
     global::{self, ID, SaveID, defaults::SHORT_SNAPSHOT_ID_LEN},
     repository::{
-        self, RepoConfig,
+        repo::RepoConfig,
+        repo::Repository,
         snapshot::{SnapshotSummary, SnapshotTuple},
         streamers::FSNodeStreamer,
     },
@@ -99,7 +100,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let config = RepoConfig {
         pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
     };
-    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
+    let (repo, _) = Repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
 
     let start = Instant::now();
 

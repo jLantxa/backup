@@ -25,11 +25,11 @@ use crate::backend::new_backend_with_prompt;
 use crate::commands::parse_tags;
 use crate::global::defaults::DEFAULT_GC_TOLERANCE;
 use crate::global::{self, FileType, ID};
-use crate::repository::RepoConfig;
+use crate::repository::repo::{RepoConfig, Repository};
 use crate::repository::snapshot::{Snapshot, SnapshotStreamer};
 use crate::ui::table::{Alignment, Table};
 use crate::utils::size;
-use crate::{commands, repository, ui, utils};
+use crate::{commands, ui, utils};
 
 use super::GlobalArgs;
 
@@ -147,7 +147,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let config = RepoConfig {
         pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
     };
-    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
+    let (repo, _) = Repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
 
     // All sapshots, filter by tags and sorted by timestamp
     let mut snapshots_sorted: Vec<(ID, Snapshot)> = SnapshotStreamer::new(repo.clone())?.collect();

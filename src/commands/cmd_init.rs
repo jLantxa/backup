@@ -19,31 +19,22 @@ use clap::Args;
 use colored::Colorize;
 
 use crate::backend::new_backend_with_prompt;
-use crate::repository::{LATEST_REPOSITORY_VERSION, RepoVersion};
+use crate::repository::repo::Repository;
 use crate::ui;
-use crate::{repository, utils};
+use crate::utils;
 
 use super::GlobalArgs;
 
 #[derive(Args, Debug)]
 #[clap(about = "Initialize a new repository")]
-pub struct CmdArgs {
-    /// Repository version
-    #[clap(long, default_value_t = LATEST_REPOSITORY_VERSION)]
-    pub repository_version: RepoVersion,
-}
+pub struct CmdArgs {}
 
-pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
+pub fn run(global_args: &GlobalArgs, _args: &CmdArgs) -> Result<()> {
     let pass = utils::get_password_from_file(&global_args.password_file)?;
     let backend = new_backend_with_prompt(global_args, false)?;
 
     ui::cli::log!("Initializing a new repository in \'{}\'", &global_args.repo);
-    repository::init_repository_with_version(
-        pass,
-        global_args.key.as_ref(),
-        args.repository_version,
-        backend,
-    )?;
+    Repository::init(pass, global_args.key.as_ref(), backend)?;
 
     ui::cli::warning!(
         "{}\n{}",
