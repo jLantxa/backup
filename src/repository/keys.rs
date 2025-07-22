@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     backend::StorageBackend,
-    repository::{KEYS_DIR, storage::SecureStorage},
+    repository::{repo::KEYS_DIR, storage::SecureStorage},
     ui,
 };
 

@@ -25,7 +25,7 @@ use crate::{
     commands::GlobalArgs,
     global::{FileType, defaults::SHORT_SNAPSHOT_ID_LEN},
     repository::{
-        self, RepoConfig,
+        repo::{RepoConfig, Repository},
         snapshot::DiffCounts,
         streamers::{NodeDiff, NodeDiffStreamer, SerializedNodeStreamer},
     },
@@ -61,7 +61,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let config = RepoConfig {
         pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
     };
-    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
+    let (repo, _) = Repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
 
     // Load snapshots
     let (source_id, _) = repo.find(FileType::Snapshot, &args.source_snapshot_id)?;

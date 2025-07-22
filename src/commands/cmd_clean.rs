@@ -29,8 +29,9 @@ use crate::{
     commands::GlobalArgs,
     global::defaults::{DEFAULT_GC_TOLERANCE, SHORT_REPO_ID_LEN},
     repository::{
-        self, RepoConfig, RepositoryBackend,
         gc::{self},
+        repo::RepoConfig,
+        repo::Repository,
         verify::verify_snapshot_links,
     },
     ui::{
@@ -68,7 +69,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let config = RepoConfig {
         pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
     };
-    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
+    let (repo, _) = Repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
 
     run_with_repo(global_args, args, repo)
 }
@@ -77,7 +78,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
 pub fn run_with_repo(
     _global_args: &GlobalArgs,
     args: &CmdArgs,
-    repo: Arc<dyn RepositoryBackend>,
+    repo: Arc<Repository>,
 ) -> Result<()> {
     let tolerance = args.tolerance.clamp(0.0, 100.0) / 100.0;
 
@@ -157,7 +158,7 @@ pub fn run_with_repo(
     Ok(())
 }
 
-fn verify_snapshots(repo: Arc<dyn RepositoryBackend>) -> Result<()> {
+fn verify_snapshots(repo: Arc<Repository>) -> Result<()> {
     ui::cli::log!("Verifying snapshots...");
 
     let spinner = ProgressBar::new_spinner();

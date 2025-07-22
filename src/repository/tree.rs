@@ -29,9 +29,8 @@ use std::os::unix::fs::MetadataExt;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::global::BlobType;
-
-use super::{ID, RepositoryBackend};
+use crate::global::ID;
+use crate::{global::BlobType, repository::repo::Repository};
 
 /// The type of a node (file, directory, symlink, etc.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,11 +54,13 @@ pub struct Node {
     pub node_type: NodeType,
 
     pub metadata: Metadata,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symlink_info: Option<SymlinkInfo>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blobs: Option<Vec<ID>>, // For files
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tree: Option<ID>, // For directories
 }
@@ -312,7 +313,7 @@ impl Tree {
 
     /// Saves a tree in the repository. This function should be called when a tree is complete,
     /// that is, when all the contents and/or tree hashes have been resolved.
-    pub fn save_to_repo(&mut self, repo: &dyn RepositoryBackend) -> Result<(ID, (u64, u64))> {
+    pub fn save_to_repo(&mut self, repo: &Repository) -> Result<(ID, (u64, u64))> {
         // Sort all nodes by name before serializing
         self.nodes.sort_by_key(|node| node.name.clone());
 
@@ -334,7 +335,7 @@ impl Tree {
     }
 
     /// Load a tree from the repository.
-    pub fn load_from_repo(repo: &dyn RepositoryBackend, root_id: &ID) -> Result<Tree> {
+    pub fn load_from_repo(repo: &Repository, root_id: &ID) -> Result<Tree> {
         let tree_object = repo.load_blob(root_id)?;
         let tree: Tree = serde_json::from_slice(&tree_object)?;
         Ok(tree)

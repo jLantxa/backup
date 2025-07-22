@@ -27,7 +27,7 @@ use fastcdc::v2020::{Normalization, StreamCDC};
 use crate::{
     global::{self, BlobType, ID},
     repository::{
-        RepositoryBackend,
+        repo::Repository,
         streamers::{NodeDiff, StreamNode},
         tree::{Node, NodeType},
     },
@@ -41,7 +41,7 @@ pub(crate) fn process_item(
         Option<StreamNode>,
         NodeDiff,
     ),
-    repo: Arc<dyn RepositoryBackend>,
+    repo: Arc<Repository>,
     progress_reporter: Arc<SnapshotProgressReporter>,
 ) -> Result<Option<(PathBuf, StreamNode)>> {
     match diff_type {
@@ -136,7 +136,7 @@ pub(crate) fn process_item(
 /// encrypted and stored in the repository. Files smaller than the minimum chunk size are stored
 /// directly as blobs.
 pub(crate) fn save_file(
-    repo: Arc<dyn RepositoryBackend>,
+    repo: Arc<Repository>,
     src_path: &Path,
     node: &Node,
     progress_reporter: Arc<SnapshotProgressReporter>,
@@ -158,7 +158,7 @@ pub(crate) fn save_file(
 
 // Chunks the file and saves the blobs in the repository.
 fn chunk_and_save_blobs(
-    repo: Arc<dyn RepositoryBackend>,
+    repo: Arc<Repository>,
     src_path: &Path,
     progress_reporter: Arc<SnapshotProgressReporter>,
 ) -> Result<Vec<ID>> {

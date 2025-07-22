@@ -24,7 +24,8 @@ use crate::{
     backend::new_backend_with_prompt,
     commands::{GlobalArgs, UseSnapshot, find_use_snapshot},
     repository::{
-        self, RepoConfig, RepositoryBackend,
+        repo::RepoConfig,
+        repo::Repository,
         streamers::find_serialized_node,
         tree::{Metadata, Node, NodeType, Tree},
     },
@@ -62,7 +63,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let config = RepoConfig {
         pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
     };
-    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
+    let (repo, _) = Repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
 
     let (_snapshot_id, snapshot) = {
         match find_use_snapshot(repo.clone(), &args.snapshot) {
@@ -96,7 +97,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
 }
 
 /// List the contents of a node.
-fn ls(path: PathBuf, node: Node, repo: &dyn RepositoryBackend, args: &CmdArgs) -> Result<()> {
+fn ls(path: PathBuf, node: Node, repo: &Repository, args: &CmdArgs) -> Result<()> {
     if !node.is_dir() {
         println!("{}", node_to_string(&node, args.long, args.human_readable));
     } else {
@@ -118,7 +119,7 @@ fn ls(path: PathBuf, node: Node, repo: &dyn RepositoryBackend, args: &CmdArgs) -
 fn ls_tree(
     path: PathBuf, // 'path' here is the initial path
     mut tree: Tree,
-    repo: &dyn RepositoryBackend,
+    repo: &Repository,
     args: &CmdArgs,
 ) -> Result<()> {
     tree.nodes.sort_by_key(|node| node.name.to_lowercase());

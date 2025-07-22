@@ -23,12 +23,16 @@ use std::{
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
 use parking_lot::RwLock;
+use zstd::DEFAULT_COMPRESSION_LEVEL;
 
 use crate::{
     backend::StorageBackend,
-    global::{self, BlobType, FileType, SaveID, defaults::SHORT_REPO_ID_LEN},
+    global::{
+        self, BlobType, FileType, ID, SaveID,
+        defaults::{DEFAULT_PACK_SIZE, SHORT_REPO_ID_LEN},
+    },
     repository::{
-        MANIFEST_PATH,
+        keys::{generate_key_file, generate_new_master_key, retrieve_master_key},
         packer::{PackSaver, Packer},
         storage::SecureStorage,
     },
@@ -36,20 +40,34 @@ use crate::{
 };
 
 use super::{
-    ID, KEYS_DIR, RepoConfig, RepoVersion, RepositoryBackend,
     index::{Index, IndexFile, MasterIndex},
     keys,
     manifest::Manifest,
     snapshot::Snapshot,
 };
 
-const REPO_VERSION: RepoVersion = 1;
+pub const THIS_REPOSITORY_VERSION: u32 = 1;
 
 const OBJECTS_DIR: &str = "objects";
 const SNAPSHOTS_DIR: &str = "snapshots";
 const INDEX_DIR: &str = "index";
+pub(crate) const MANIFEST_PATH: &str = "manifest";
+pub(crate) const KEYS_DIR: &str = "keys";
 
 const OBJECTS_DIR_FANOUT: usize = 2;
+
+#[derive(Debug)]
+pub struct RepoConfig {
+    pub pack_size: u64,
+}
+
+impl Default for RepoConfig {
+    fn default() -> Self {
+        Self {
+            pack_size: DEFAULT_PACK_SIZE,
+        }
+    }
+}
 
 pub struct Repository {
     backend: Arc<dyn StorageBackend>,
@@ -72,10 +90,60 @@ pub struct Repository {
     index: Arc<RwLock<MasterIndex>>,
 }
 
-impl RepositoryBackend for Repository {
+impl Repository {
     /// Create and initialize a new repository
-    fn init(backend: Arc<dyn StorageBackend>, secure_storage: Arc<SecureStorage>) -> Result<()> {
+    pub fn init(
+        password: Option<String>,
+        keyfile_path: Option<&PathBuf>,
+        backend: Arc<dyn StorageBackend>,
+    ) -> Result<()> {
         let timestamp = Utc::now();
+
+        let pass = match password {
+            Some(p) => p,
+            None => ui::cli::request_password_with_confirmation(
+                "Enter new password for repository",
+                "Confirm password",
+                "Passwords don't match",
+            ),
+        };
+
+        // Create the repository root
+        if backend.root_exists() {
+            bail!("Could not initialize a repository because a directory already exists");
+        }
+
+        backend
+            .create()
+            .with_context(|| "Could not create root directory")?;
+
+        let keys_path = PathBuf::from(KEYS_DIR);
+        backend.create_dir(&keys_path)?;
+
+        // Create new key
+        let master_key = generate_new_master_key();
+        let keyfile = generate_key_file(&pass, master_key.clone())
+            .with_context(|| "Could not generate key")?;
+        let secure_storage = Arc::new(
+            SecureStorage::build()
+                .with_compression(DEFAULT_COMPRESSION_LEVEL)
+                .with_key(master_key),
+        );
+
+        let keyfile_json = serde_json::to_string_pretty(&keyfile)?;
+        let keyfile_json =
+            SecureStorage::compress(keyfile_json.as_bytes(), DEFAULT_COMPRESSION_LEVEL)?;
+        let keyfile_id = ID::from_content(&keyfile_json);
+        match keyfile_path {
+            Some(p) => {
+                std::fs::write(p, &keyfile_json)?;
+            }
+            None => {
+                let p = keys_path.join(keyfile_id.to_hex());
+
+                backend.write(&p, &keyfile_json)?;
+            }
+        }
 
         let repo_id = ID::new_random();
 
@@ -86,7 +154,7 @@ impl RepositoryBackend for Repository {
 
         // Save new manifest
         let manifest = Manifest {
-            version: REPO_VERSION,
+            version: THIS_REPOSITORY_VERSION,
             id: repo_id.clone(),
             created_time: timestamp,
         };
@@ -111,6 +179,72 @@ impl RepositoryBackend for Repository {
         );
 
         Ok(())
+    }
+
+    /// Try to open a repository.
+    /// This function prompts for a password to retrieve a master key.
+    pub fn try_open(
+        mut password: Option<String>,
+        key_file_path: Option<&PathBuf>,
+        backend: Arc<dyn StorageBackend>,
+        config: RepoConfig,
+    ) -> Result<(Arc<Repository>, Arc<SecureStorage>)> {
+        if !backend.root_exists() {
+            bail!("Could not open a repository. The path does not exist.");
+        }
+
+        const MAX_PASSWORD_RETRIES: u32 = 3;
+        let mut password_try_count = 0;
+
+        let master_key = {
+            if let Some(p) = password.take() {
+                retrieve_master_key(&p, key_file_path, backend.clone())
+                    .with_context(|| "Incorrect password.")?
+            } else {
+                loop {
+                    let pass_from_console = ui::cli::request_password("Enter repository password");
+
+                    if let Ok(key) =
+                        retrieve_master_key(&pass_from_console, key_file_path, backend.clone())
+                    {
+                        break key;
+                    } else {
+                        password_try_count += 1;
+                        if password_try_count < MAX_PASSWORD_RETRIES {
+                            ui::cli::log!("Incorrect password. Try again.");
+                            continue;
+                        } else {
+                            bail!("Wrong password or no KeyFile found.");
+                        }
+                    }
+                }
+            }
+        };
+
+        let secure_storage = Arc::new(
+            SecureStorage::build()
+                .with_compression(DEFAULT_COMPRESSION_LEVEL)
+                .with_key(master_key),
+        );
+
+        let manifest_path = Path::new(MANIFEST_PATH);
+
+        let manifest = backend
+            .read(manifest_path)
+            .with_context(|| "Could not load manifest file")?;
+        let manifest = secure_storage
+            .decode(&manifest)
+            .with_context(|| "Could not decode the manifest file")?;
+        let manifest: Manifest = serde_json::from_slice(&manifest)?;
+
+        let version = manifest.version;
+
+        if version == 1 {
+            let repo = Repository::open(backend, secure_storage.clone(), config)?;
+            Ok((repo, secure_storage))
+        } else {
+            bail!("Invalid repository version \'{}\'", version);
+        }
     }
 
     /// Open an existing repository from a directory
@@ -147,7 +281,10 @@ impl RepositoryBackend for Repository {
         Ok(Arc::new(repo))
     }
 
-    fn save_blob(
+    /// Saves a blob in the repository. This blob can be packed with other blobs in an object file.
+    /// Returns a tuple (`ID`, raw_size, encoded_size)
+    #[allow(clippy::type_complexity)]
+    pub fn save_blob(
         &self,
         object_type: BlobType,
         data: Vec<u8>,
@@ -189,7 +326,8 @@ impl RepositoryBackend for Repository {
         Ok((id, (raw_size, encoded_size), packer_meta_size))
     }
 
-    fn load_blob(&self, id: &ID) -> Result<Vec<u8>> {
+    /// Loads a blob from the repository.
+    pub fn load_blob(&self, id: &ID) -> Result<Vec<u8>> {
         let blob_entry = self.index.read().get(id);
         match blob_entry {
             Some((pack_id, _blob_type, offset, length)) => {
@@ -199,7 +337,8 @@ impl RepositoryBackend for Repository {
         }
     }
 
-    fn save_file(
+    /// Saves a file to the repository
+    pub fn save_file(
         &self,
         file_type: FileType,
         data: &[u8],
@@ -223,7 +362,8 @@ impl RepositoryBackend for Repository {
         Ok((id, raw_size, encoded_size))
     }
 
-    fn load_file(&self, file_type: FileType, id: &ID) -> Result<Vec<u8>> {
+    /// Loads a file to the repository
+    pub fn load_file(&self, file_type: FileType, id: &ID) -> Result<Vec<u8>> {
         assert_ne!(file_type, FileType::Key);
         assert_ne!(file_type, FileType::Manifest);
 
@@ -237,7 +377,8 @@ impl RepositoryBackend for Repository {
         Ok(data)
     }
 
-    fn delete_file(&self, file_type: FileType, id: &ID) -> Result<u64> {
+    /// Deletes a file from the repository
+    pub fn delete_file(&self, file_type: FileType, id: &ID) -> Result<u64> {
         assert_ne!(file_type, FileType::Key);
         assert_ne!(file_type, FileType::Manifest);
 
@@ -248,7 +389,8 @@ impl RepositoryBackend for Repository {
         Ok(size.unwrap_or(0))
     }
 
-    fn remove_snapshot(&self, id: &ID) -> Result<()> {
+    /// Removes a snapshot from the repository, if it exists.
+    pub fn remove_snapshot(&self, id: &ID) -> Result<()> {
         let snapshot_path = self.snapshot_path.join(id.to_hex());
 
         if !self.backend.exists(&snapshot_path) {
@@ -260,7 +402,8 @@ impl RepositoryBackend for Repository {
             .with_context(|| format!("Could not remove snapshot {id}"))
     }
 
-    fn load_snapshot(&self, id: &ID) -> Result<Snapshot> {
+    /// Loads a snapshot by ID
+    pub fn load_snapshot(&self, id: &ID) -> Result<Snapshot> {
         let snapshot = self
             .load_file(FileType::Snapshot, id)
             .with_context(|| format!("No snapshot with ID \'{id}\' exists"))?;
@@ -268,7 +411,8 @@ impl RepositoryBackend for Repository {
         Ok(snapshot)
     }
 
-    fn list_snapshot_ids(&self) -> Result<Vec<ID>> {
+    /// Lists all snapshot IDs
+    pub fn list_snapshot_ids(&self) -> Result<Vec<ID>> {
         let mut ids = Vec::new();
 
         let paths = self
@@ -287,7 +431,9 @@ impl RepositoryBackend for Repository {
         Ok(ids)
     }
 
-    fn flush(&self) -> Result<(u64, u64)> {
+    /// Flushes all pending data and saves it.
+    /// Returns a tuple (raw_size, encoded_size)
+    pub fn flush(&self) -> Result<(u64, u64)> {
         let data_packer_meta_size = self.flush_packer(&self.data_packer)?;
         let tree_packer_meta_size = self.flush_packer(&self.tree_packer)?;
 
@@ -299,11 +445,13 @@ impl RepositoryBackend for Repository {
         ))
     }
 
-    fn load_object(&self, id: &ID) -> Result<Vec<u8>> {
+    /// Loads a pack.
+    pub fn load_object(&self, id: &ID) -> Result<Vec<u8>> {
         self.load_file(FileType::Object, id)
     }
 
-    fn load_index(&self, id: &ID) -> Result<IndexFile> {
+    /// Loads an index file.
+    pub fn load_index(&self, id: &ID) -> Result<IndexFile> {
         let index: Vec<u8> = self
             .load_file(FileType::Index, id)
             .with_context(|| format!("Could not load index {}", id.to_hex()))?;
@@ -311,14 +459,16 @@ impl RepositoryBackend for Repository {
         Ok(index)
     }
 
-    fn load_manifest(&self) -> Result<Manifest> {
+    /// Loads the repository manifest.
+    pub fn load_manifest(&self) -> Result<Manifest> {
         let manifest = self.backend.read(Path::new(MANIFEST_PATH))?;
         let manifest = self.secure_storage.decode(&manifest)?;
         let manifest = serde_json::from_slice(&manifest)?;
         Ok(manifest)
     }
 
-    fn load_key(&self, id: &ID) -> Result<keys::KeyFile> {
+    /// Loads a KeyFile.
+    pub fn load_key(&self, id: &ID) -> Result<keys::KeyFile> {
         let key_path = self.keys_path.join(id.to_hex());
         let key = self.backend.read(&key_path)?;
         let key = SecureStorage::decompress(&key)?;
@@ -326,7 +476,8 @@ impl RepositoryBackend for Repository {
         Ok(key)
     }
 
-    fn find(&self, file_type: FileType, prefix: &str) -> Result<(ID, PathBuf)> {
+    /// Finds a file in the repository using an ID prefix
+    pub fn find(&self, file_type: FileType, prefix: &str) -> Result<(ID, PathBuf)> {
         if prefix.len() > 2 * global::ID_LENGTH {
             // A hex string has 2 characters per byte.
             bail!(
@@ -374,7 +525,7 @@ impl RepositoryBackend for Repository {
         Ok((id, filepath))
     }
 
-    fn init_pack_saver(&self, concurrency: usize) {
+    pub fn init_pack_saver(&self, concurrency: usize) {
         let backend = self.backend.clone();
         let objects_path = self.objects_path.clone();
 
@@ -390,17 +541,17 @@ impl RepositoryBackend for Repository {
         self.pack_saver.write().replace(pack_saver);
     }
 
-    fn finalize_pack_saver(&self) {
+    pub fn finalize_pack_saver(&self) {
         if let Some(pack_saver) = self.pack_saver.write().take() {
             pack_saver.finish();
         }
     }
 
-    fn index(&self) -> Arc<RwLock<MasterIndex>> {
+    pub fn index(&self) -> Arc<RwLock<MasterIndex>> {
         self.index.clone()
     }
 
-    fn read_from_file(
+    pub fn read_from_file(
         &self,
         file_type: FileType,
         id: &ID,
@@ -415,7 +566,7 @@ impl RepositoryBackend for Repository {
         self.secure_storage.decode(&data)
     }
 
-    fn list_objects(&self) -> Result<BTreeSet<ID>> {
+    pub fn list_objects(&self) -> Result<BTreeSet<ID>> {
         let mut list = BTreeSet::new();
 
         let num_folders: usize = 1 << (4 * OBJECTS_DIR_FANOUT);
@@ -435,15 +586,7 @@ impl RepositoryBackend for Repository {
 
         Ok(list)
     }
-}
 
-impl Drop for Repository {
-    fn drop(&mut self) {
-        let _ = self.flush();
-    }
-}
-
-impl Repository {
     /// Returns the path to an object with a given hash in the repository.
     fn get_object_path(objects_path: &Path, id: &ID) -> PathBuf {
         let id_hex = id.to_hex();
@@ -556,5 +699,70 @@ impl Repository {
     }
 }
 
+impl Drop for Repository {
+    fn drop(&mut self) {
+        let _ = self.flush();
+    }
+}
+
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use base64::{Engine, engine::general_purpose};
+    use tempfile::tempdir;
+
+    use crate::{backend::localfs::LocalFS, utils};
+
+    use super::*;
+
+    /// Test init a repo with password and open it
+    #[test]
+    fn test_init_and_open_with_password() -> Result<()> {
+        let temp_repo_dir = tempdir()?;
+        let temp_repo_path = temp_repo_dir.path().join("repo");
+
+        let password = Some(String::from("mapachito"));
+        let backend = Arc::new(LocalFS::new(temp_repo_path.to_owned()));
+
+        Repository::init(password.clone(), None, backend.to_owned())?;
+        Repository::try_open(password, None, backend, RepoConfig::default())?;
+
+        Ok(())
+    }
+
+    /// Test init a repo with password and open it using a password stored in a file
+    #[test]
+    fn test_init_and_open_with_password_from_file() -> Result<()> {
+        let temp_dir = tempdir()?;
+        let temp_path = temp_dir.path();
+        let temp_repo_path = temp_path.join("repo");
+        let password_file_path = temp_path.join("repo_password");
+
+        // Write password to file
+        std::fs::write(&password_file_path, "mapachito")?;
+
+        let password = utils::get_password_from_file(&Some(password_file_path))?;
+        let backend = Arc::new(LocalFS::new(temp_repo_path.to_owned()));
+
+        Repository::init(password.clone(), None, backend.to_owned())?;
+        Repository::try_open(password, None, backend, RepoConfig::default())?;
+
+        Ok(())
+    }
+
+    /// Test generation of master keys
+    #[test]
+    fn test_generate_key_file() -> Result<()> {
+        let master_key = generate_new_master_key();
+        let keyfile = generate_key_file("mapachito", master_key.clone())?;
+
+        let salt = general_purpose::STANDARD.decode(keyfile.salt)?;
+        let encrypted_key = general_purpose::STANDARD.decode(keyfile.encrypted_key)?;
+
+        let intermediate_key = SecureStorage::derive_key("mapachito", &salt);
+        let decrypted_key = SecureStorage::decrypt_with_key(&intermediate_key, &encrypted_key)?;
+
+        assert_eq!(master_key, decrypted_key.as_slice());
+
+        Ok(())
+    }
+}

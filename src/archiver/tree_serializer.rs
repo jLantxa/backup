@@ -24,7 +24,7 @@ use anyhow::{Context, Result};
 use crate::{
     global::ID,
     repository::{
-        RepositoryBackend,
+        repo::Repository,
         streamers::StreamNode,
         tree::{Node, NodeType, Tree},
     },
@@ -95,7 +95,7 @@ pub(crate) fn init_pending_trees(
 
 pub(crate) fn handle_processed_item(
     (path, stream_node): (PathBuf, StreamNode),
-    repo: &dyn RepositoryBackend,
+    repo: &Repository,
     pending_trees: &mut HashMap<PathBuf, PendingTree>,
     final_root_tree_id: &mut Option<ID>,
     snapshot_root_path: &Path,
@@ -140,7 +140,7 @@ pub(crate) fn handle_processed_item(
 
 pub(crate) fn finalize_if_complete(
     dir_path: PathBuf,
-    repo: &dyn RepositoryBackend,
+    repo: &Repository,
     pending_trees: &mut HashMap<PathBuf, PendingTree>,
     final_root_tree_id: &mut Option<ID>,
     snapshot_root_path: &Path,

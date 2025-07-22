@@ -33,14 +33,13 @@ use tree_serializer::finalize_if_complete;
 use crate::{
     global::ID,
     repository::{
-        RepositoryBackend,
+        repo::Repository,
         snapshot::Snapshot,
         streamers::{
             FSNodeStreamer, NodeDiff, NodeDiffStreamer, SerializedNodeStreamer, StreamNode,
         },
     },
-    ui,
-    ui::snapshot_progress::SnapshotProgressReporter,
+    ui::{self, snapshot_progress::SnapshotProgressReporter},
 };
 
 pub struct SnapshotOptions {
@@ -53,7 +52,7 @@ pub struct SnapshotOptions {
 }
 
 pub struct Archiver {
-    repo: Arc<dyn RepositoryBackend>,
+    repo: Arc<Repository>,
     snapshot_options: SnapshotOptions,
     read_concurrency: usize,
     write_concurrency: usize,
@@ -62,7 +61,7 @@ pub struct Archiver {
 
 impl Archiver {
     pub fn new(
-        repo: Arc<dyn RepositoryBackend>,
+        repo: Arc<Repository>,
         snapshot_options: SnapshotOptions,
         (read_concurrency, write_concurrency): (usize, usize),
         progress_reporter: Arc<SnapshotProgressReporter>,

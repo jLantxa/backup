@@ -30,7 +30,8 @@ use crate::{
     commands::{GlobalArgs, UseSnapshot, find_use_snapshot},
     global::defaults::SHORT_SNAPSHOT_ID_LEN,
     repository::{
-        self, RepoConfig, streamers::SerializedNodeStreamer, verify::verify_snapshot_links,
+        repo::RepoConfig, repo::Repository, streamers::SerializedNodeStreamer,
+        verify::verify_snapshot_links,
     },
     restorer::{self, Resolution, Restorer},
     ui::{
@@ -102,7 +103,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let config = RepoConfig {
         pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
     };
-    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
+    let (repo, _) = Repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
 
     let (snapshot_id, snapshot) = match find_use_snapshot(repo.clone(), &args.snapshot) {
         Ok(Some((id, snap))) => (id, snap),

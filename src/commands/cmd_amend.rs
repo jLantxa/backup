@@ -24,7 +24,7 @@ use colored::Colorize;
 
 use crate::archiver::tree_serializer::init_pending_trees;
 use crate::commands::{EMPTY_TAG_MARK, parse_tags};
-use crate::repository::RepoConfig;
+use crate::repository::repo::{RepoConfig, Repository};
 use crate::repository::snapshot::SnapshotStreamer;
 use crate::utils::{format_size, size};
 use crate::{
@@ -32,7 +32,7 @@ use crate::{
     backend::new_backend_with_prompt,
     commands::{GlobalArgs, UseSnapshot, find_use_snapshot},
     global::{FileType, ID, SaveID, defaults::SHORT_SNAPSHOT_ID_LEN},
-    repository::{self, RepositoryBackend, snapshot::Snapshot, streamers::SerializedNodeStreamer},
+    repository::{snapshot::Snapshot, streamers::SerializedNodeStreamer},
     ui, utils,
 };
 
@@ -82,7 +82,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let config = RepoConfig {
         pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
     };
-    let (repo, _) = repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
+    let (repo, _) = Repository::try_open(pass, global_args.key.as_ref(), backend, config)?;
 
     let start = Instant::now();
 
@@ -124,7 +124,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
 }
 
 fn amend(
-    repo: Arc<dyn RepositoryBackend>,
+    repo: Arc<Repository>,
     origin_snapshot_id: &ID,
     snapshot: &mut Snapshot,
     args: &CmdArgs,
@@ -198,7 +198,7 @@ fn amend(
 }
 
 fn rewrite_snapshot_tree(
-    repo: Arc<dyn RepositoryBackend>,
+    repo: Arc<Repository>,
     snapshot: &mut Snapshot,
     excludes: Option<Vec<PathBuf>>,
 ) -> Result<(u64, u64)> {

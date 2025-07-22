@@ -26,7 +26,7 @@ use anyhow::{Context, Ok, Result, bail};
 use clap::ValueEnum;
 
 use crate::{
-    repository::{RepositoryBackend, snapshot::Snapshot, streamers::SerializedNodeStreamer},
+    repository::{repo::Repository, snapshot::Snapshot, streamers::SerializedNodeStreamer},
     ui::restore_progress::RestoreProgressReporter,
     utils,
 };
@@ -49,7 +49,7 @@ pub struct Restorer {}
 impl Restorer {
     #[allow(clippy::too_many_arguments)]
     pub fn restore(
-        repo: Arc<dyn RepositoryBackend>,
+        repo: Arc<Repository>,
         snapshot: &Snapshot,
         target_path: &Path,
         include: Option<Vec<PathBuf>>,

@@ -18,7 +18,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
 
-use mapache::{backend::localfs::LocalFS, repository};
+use mapache::{backend::localfs::LocalFS, repository::repo::Repository};
 
 mod test_cmd_amend;
 mod test_cmd_clean;
@@ -30,6 +30,6 @@ const BACKUP_DATA_PATH: &str = "backup_data.tar.xz";
 
 fn init_repo(password: &str, repo_path: PathBuf) -> Result<()> {
     let backend = Arc::new(LocalFS::new(repo_path));
-    repository::init(Some(password.to_owned()), None, backend)
+    Repository::init(Some(password.to_owned()), None, backend)
         .with_context(|| "Failed to init repo")
 }
