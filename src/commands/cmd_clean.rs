@@ -30,12 +30,11 @@ use crate::{
     global::defaults::{DEFAULT_GC_TOLERANCE, SHORT_REPO_ID_LEN},
     repository::{
         gc::{self},
-        repo::RepoConfig,
-        repo::Repository,
+        repo::{RepoConfig, Repository},
         verify::verify_snapshot_links,
     },
     ui::{
-        self, PROGRESS_REFRESH_RATE_HZ, SPINNER_TICK_CHARS,
+        self, PROGRESS_REFRESH_RATE_HZ, SPINNER_TICK_CHARS, default_bar_draw_target,
         table::{Alignment, Table},
     },
     utils::{self, size},
@@ -162,6 +161,7 @@ fn verify_snapshots(repo: Arc<Repository>) -> Result<()> {
     ui::cli::log!("Verifying snapshots...");
 
     let spinner = ProgressBar::new_spinner();
+    spinner.set_draw_target(default_bar_draw_target());
     spinner.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.cyan} {msg}")

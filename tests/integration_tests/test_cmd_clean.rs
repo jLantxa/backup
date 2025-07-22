@@ -22,7 +22,7 @@ mod tests {
     use anyhow::{Context, Result};
     use mapache::{
         commands::{self, GlobalArgs, UseSnapshot, cmd_clean, cmd_restore, cmd_snapshot},
-        global::defaults::DEFAULT_DEFAULT_PACK_SIZE_MIB,
+        global::{defaults::DEFAULT_DEFAULT_PACK_SIZE_MIB, set_global_opts_with_args},
     };
 
     use tempfile::tempdir;
@@ -58,6 +58,7 @@ mod tests {
             ssh_privatekey: None,
             pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
+        set_global_opts_with_args(&global);
 
         // Init repo
         init_repo(password, repo_path.clone())?;

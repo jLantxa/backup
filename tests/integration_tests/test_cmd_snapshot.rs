@@ -58,6 +58,7 @@ mod tests {
             ssh_privatekey: None,
             pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
+        set_global_opts_with_args(&global);
 
         // Init repo
         init_repo(password, repo_path.clone())?;
@@ -162,6 +163,7 @@ mod tests {
             ssh_privatekey: None,
             pack_size_mib: DEFAULT_DEFAULT_PACK_SIZE_MIB,
         };
+        set_global_opts_with_args(&global);
 
         // Init repo
         init_repo(password, repo_path.clone())?;

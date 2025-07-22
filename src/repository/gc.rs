@@ -81,6 +81,7 @@ pub fn scan(repo: Arc<Repository>, tolerance: f32) -> Result<Plan> {
 
     // Find obsolete packs and blobs in index
     let spinner = ProgressBar::new_spinner();
+    spinner.set_draw_target(default_bar_draw_target());
     spinner.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.cyan} Finding obsolete blobs: {pos}")
@@ -123,6 +124,7 @@ pub fn scan(repo: Arc<Repository>, tolerance: f32) -> Result<Plan> {
 
     // Check garbage levels
     let spinner = ProgressBar::new_spinner();
+    spinner.set_draw_target(default_bar_draw_target());
     spinner.set_length(pack_garbage.len() as u64);
     spinner.set_style(
         ProgressStyle::default_spinner()
@@ -349,6 +351,7 @@ fn get_referenced_blobs_and_packs(repo: Arc<Repository>) -> Result<(BTreeSet<ID>
     let snapshot_streamer = SnapshotStreamer::new(repo.clone())?;
 
     let spinner = ProgressBar::new_spinner();
+    spinner.set_draw_target(default_bar_draw_target());
     spinner.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.cyan} Searching referenced blobs: {pos}")
