@@ -39,6 +39,8 @@ struct BlobLocation {
     pub offset: u32,
     /// The length of the blob within its pack file.
     pub length: u32,
+    /// The raw sized (uncompressed, unencrypted) of the blob
+    pub raw_length: u32,
 }
 
 /// Represents the location and size of a blob within a pack file.
@@ -48,6 +50,7 @@ pub struct BlobLocator {
     pub pack_id: ID,
     pub offset: u32,
     pub length: u32,
+    pub raw_length: u32,
 }
 
 /// Manages the mapping of blob IDs to their locations within pack files.
@@ -151,6 +154,7 @@ impl Index {
                         pack_array_index: pack_index as u32,
                         offset: blob.offset,
                         length: blob.length,
+                        raw_length: blob.raw_length,
                     },
                 );
             }
@@ -166,7 +170,7 @@ impl Index {
 
     /// Retrieves the pack ID, offset, and length for a given blob ID, if it exists.
     /// Returns `None` if the blob ID is not found.
-    pub fn get(&self, id: &ID) -> Option<(ID, BlobType, u32, u32)> {
+    pub fn get(&self, id: &ID) -> Option<(ID, BlobType, u32, u32, u32)> {
         self.data_ids
             .get(id)
             .map(|location| {
@@ -179,6 +183,7 @@ impl Index {
                     BlobType::Data,
                     location.offset,
                     location.length,
+                    location.raw_length,
                 )
             })
             .or_else(|| {
@@ -192,6 +197,7 @@ impl Index {
                         BlobType::Tree,
                         location.offset,
                         location.length,
+                        location.raw_length,
                     )
                 })
             })
@@ -215,6 +221,7 @@ impl Index {
                     pack_array_index: pack_index as u32,
                     offset: blob.offset,
                     length: blob.length,
+                    raw_length: blob.raw_length,
                 },
             );
         }
@@ -240,6 +247,7 @@ impl Index {
                 blob_type: BlobType::Data,
                 offset: location.offset,
                 length: location.length,
+                raw_length: location.raw_length,
             });
         }
         for (blob_id, location) in &self.tree_ids {
@@ -251,6 +259,7 @@ impl Index {
                 blob_type: BlobType::Tree,
                 offset: location.offset,
                 length: location.length,
+                raw_length: location.raw_length,
             });
         }
 
@@ -308,6 +317,7 @@ impl Index {
                             .clone(),
                         offset: loc.offset,
                         length: loc.length,
+                        raw_length: loc.raw_length,
                     },
                 )
             })
@@ -374,7 +384,7 @@ impl MasterIndex {
 
     /// Retrieves an entry for a given blob ID by searching through finalized indices.
     /// Pending blobs (those not yet packed) cannot be retrieved via this method.
-    pub fn get(&self, id: &ID) -> Option<(ID, BlobType, u32, u32)> {
+    pub fn get(&self, id: &ID) -> Option<(ID, BlobType, u32, u32, u32)> {
         self.indices
             .iter()
             .find_map(|idx| if !idx.is_pending { idx.get(id) } else { None })
@@ -513,13 +523,15 @@ impl MasterIndex {
                 let mut process_blobs =
                     |blob_map: &HashMap<ID, BlobLocation>, blob_type: BlobType| {
                         for (blob_id, _) in blob_map.iter() {
-                            let (blob_pack_id, _, offset, length) = idx.get(blob_id).unwrap();
+                            let (blob_pack_id, _, offset, length, raw_length) =
+                                idx.get(blob_id).unwrap();
                             if blob_pack_id == *pack_id {
                                 let blob_descriptor = PackedBlobDescriptor {
                                     id: blob_id.clone(),
                                     blob_type: blob_type.clone(),
                                     offset,
                                     length,
+                                    raw_length,
                                 };
                                 packed_blob_descriptors.push(blob_descriptor);
                             }
@@ -565,4 +577,5 @@ pub struct IndexFileBlob {
     pub blob_type: BlobType,
     pub offset: u32,
     pub length: u32,
+    pub raw_length: u32,
 }

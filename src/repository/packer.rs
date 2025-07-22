@@ -27,7 +27,14 @@ use crate::{
     utils,
 };
 
-pub(crate) const HEADER_BLOB_LEN: usize = 32 + 4 + 1; // id (256 bits) + length (u32) + type (u8)
+/// Size of a header blob entry
+/// id (256 bits) + type (u8) + length (u32) + raw_length (u32)
+pub(crate) const HEADER_BLOB_LEN: usize = 32 + 4 + 4 + 1;
+
+pub const HEADER_ID_OFFSET: usize = 0;
+pub const HEADER_BLOB_TYPE_OFFSET: usize = 32;
+pub const HEADER_BLOB_LENGTH_OFFSET: usize = 33;
+pub const HEADER_BLOB_RAW_LENGTH_OFFSET: usize = 37;
 
 /// Describes a single blob's location and size within a packed file.
 /// This metadata is crucial for retrieving individual blobs from a pack.
@@ -37,6 +44,7 @@ pub struct PackedBlobDescriptor {
     pub blob_type: BlobType,
     pub offset: u32,
     pub length: u32,
+    pub raw_length: u32,
 }
 
 /// A tuple representing the flushed contents of a `Packer`:
@@ -57,7 +65,7 @@ pub struct FlushedPack {
 /// This design helps minimize memory reallocations by consolidating all blob
 /// data into a single `Vec<u8>` and tracking individual blob locations.
 pub struct Packer {
-    blobs: Vec<(ID, BlobType, Vec<u8>)>,
+    blobs: Vec<(ID, BlobType, Vec<u8>, u64)>, // (ID, type, encoded_data, raw_length)
     size: u64,
 }
 
@@ -98,10 +106,16 @@ impl Packer {
     /// The `blob_data` `Vec<u8>` is efficiently moved into the packer's internal
     /// buffer using `Vec::append`, avoiding a costly copy. After this call, `blob_data`
     /// will be empty.
-    pub fn add_blob(&mut self, id: ID, blob_type: BlobType, blob_data: Vec<u8>) {
-        let length = blob_data.len();
-        self.size += length as u64;
-        self.blobs.push((id, blob_type, blob_data));
+    pub fn add_blob(
+        &mut self,
+        id: ID,
+        blob_type: BlobType,
+        blob_data: Vec<u8>,
+        raw_size: u64,
+        encoded_size: u64,
+    ) {
+        self.size += encoded_size;
+        self.blobs.push((id, blob_type, blob_data, raw_size));
     }
 
     /// Flushes the contents of the packer, returning the accumulated raw data
@@ -130,6 +144,7 @@ impl Packer {
                 blob_type: blob.1,
                 offset,
                 length,
+                raw_length: blob.3 as u32,
             });
             data.append(&mut blob_data);
             offset += length;
@@ -167,6 +182,7 @@ impl Packer {
                     blob_type: BlobType::Padding,
                     offset: rand::rng().random(),
                     length: rand::rng().random(),
+                    raw_length: rand::rng().random(),
                 });
             }
         }
@@ -175,11 +191,14 @@ impl Packer {
             let id = blob.id.as_slice();
             pack_header.extend_from_slice(id);
 
+            let blob_type: [u8; 1] = (blob.blob_type.to_owned() as u8).to_le_bytes();
+            pack_header.extend_from_slice(&blob_type);
+
             let length = blob.length.to_le_bytes();
             pack_header.extend_from_slice(&length);
 
-            let blob_type: [u8; 1] = (blob.blob_type.to_owned() as u8).to_le_bytes();
-            pack_header.extend_from_slice(&blob_type);
+            let raw_length = blob.raw_length.to_le_bytes();
+            pack_header.extend_from_slice(&raw_length);
         }
 
         pack_header
@@ -253,32 +272,43 @@ impl Packer {
         let num_blobs = (header_len) / HEADER_BLOB_LEN;
 
         let mut blob_descriptors = Vec::new();
-        let mut current_offset: u32 = 0;
+        let mut offset: u32 = 0;
         for i in 0..num_blobs {
             let blob_info = &header_blob_info[(i * HEADER_BLOB_LEN)..((i + 1) * HEADER_BLOB_LEN)];
 
-            let blob_type: BlobType = blob_info[36].into();
+            let blob_type: BlobType = blob_info[HEADER_BLOB_TYPE_OFFSET].into();
             if matches!(blob_type, BlobType::Padding) {
                 // Ignore padding blobs. They "don't exist".
                 continue;
             }
 
-            let blob_id_bytes: [u8; 32] = blob_info[0..32].try_into().unwrap();
+            let blob_id_bytes: [u8; 32] = blob_info[HEADER_ID_OFFSET..HEADER_ID_OFFSET + 32]
+                .try_into()
+                .unwrap();
             let id = ID::from_bytes(blob_id_bytes);
 
-            let offset = current_offset;
-
-            let length_bytes: [u8; 4] = blob_info[32..36].try_into().unwrap();
+            let length_bytes: [u8; 4] = blob_info
+                [HEADER_BLOB_LENGTH_OFFSET..HEADER_BLOB_LENGTH_OFFSET + 4]
+                .try_into()
+                .unwrap();
             let length = u32::from_le_bytes(length_bytes);
-            current_offset += length;
+
+            let raw_length_bytes: [u8; 4] = blob_info
+                [HEADER_BLOB_RAW_LENGTH_OFFSET..HEADER_BLOB_RAW_LENGTH_OFFSET + 4]
+                .try_into()
+                .unwrap();
+            let raw_length = u32::from_le_bytes(raw_length_bytes);
 
             let blob_descriptor = PackedBlobDescriptor {
                 id,
                 blob_type,
                 offset,
                 length,
+                raw_length,
             };
             blob_descriptors.push(blob_descriptor);
+
+            offset += length;
         }
 
         Ok(blob_descriptors)
@@ -339,7 +369,6 @@ impl PackSaver {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]
@@ -347,13 +376,13 @@ mod tests {
         let mut packer = Packer::new();
 
         let blob1: Vec<u8> = b"mapache".to_vec(); // 7 bytes
-        packer.add_blob(ID::from_content(&blob1), BlobType::Data, blob1);
+        packer.add_blob(ID::from_content(&blob1), BlobType::Data, blob1, 7, 7);
 
         let blob2: Vec<u8> = b"backup".to_vec(); // 6 bytes
-        packer.add_blob(ID::from_content(&blob2), BlobType::Data, blob2);
+        packer.add_blob(ID::from_content(&blob2), BlobType::Data, blob2, 6, 6);
 
         let blob3: Vec<u8> = b"rust".to_vec(); // 4 bytes
-        packer.add_blob(ID::from_content(&blob3), BlobType::Data, blob3);
+        packer.add_blob(ID::from_content(&blob3), BlobType::Data, blob3, 4, 4);
 
         assert_eq!(packer.size(), (7 + 6 + 4));
         assert!(!packer.is_empty());
@@ -366,7 +395,7 @@ mod tests {
             .expect("Failed to flush packer")
             .expect("Flushed pack data must be Some");
 
-        assert_eq!(flushed_pack.data.len(), 2398);
+        assert_eq!(flushed_pack.data.len(), 2654);
         // Due to obfuscation we cannot make assumptions about the hash
 
         let header_descriptors = Packer::parse_header(&secure_storage, &flushed_pack.data)?;

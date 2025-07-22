@@ -286,11 +286,11 @@ impl Repository {
     #[allow(clippy::type_complexity)]
     pub fn save_blob(
         &self,
-        object_type: BlobType,
+        blob_type: BlobType,
         data: Vec<u8>,
         save_id: SaveID,
     ) -> Result<(ID, (u64, u64), (u64, u64))> {
-        let packer = match object_type {
+        let packer = match blob_type {
             BlobType::Data => &self.data_packer,
             BlobType::Tree => &self.tree_packer,
             BlobType::Padding => panic!("Internal error: blob type not allowed"),
@@ -314,7 +314,9 @@ impl Repository {
         let data = self.secure_storage.encode(&data)?;
         let encoded_size = data.len() as u64;
 
-        packer.write().add_blob(id.clone(), object_type, data);
+        packer
+            .write()
+            .add_blob(id.clone(), blob_type, data, raw_size, encoded_size);
 
         // Flush if the packer is considered full
         let packer_meta_size = if packer.read().size() > self.max_packer_size {
@@ -330,7 +332,7 @@ impl Repository {
     pub fn load_blob(&self, id: &ID) -> Result<Vec<u8>> {
         let blob_entry = self.index.read().get(id);
         match blob_entry {
-            Some((pack_id, _blob_type, offset, length)) => {
+            Some((pack_id, _blob_type, offset, length, _raw_length)) => {
                 self.load_from_pack(&pack_id, offset, length)
             }
             None => bail!("Could not find blob {:?} in index", id),
@@ -676,7 +678,10 @@ impl Repository {
             let id = ID::from_hex(&file_name)?;
             let index_file = self.backend.read(&file)?;
             let index_file = self.secure_storage.decode(&index_file)?;
-            let index_file = serde_json::from_slice(&index_file)?;
+            let index_file = match serde_json::from_slice(&index_file) {
+                Ok(idx_file) => idx_file,
+                Err(e) => bail!("Failed to load index file {}: {}", id.to_short_hex(4), e),
+            };
 
             let mut index = Index::from_index_file(index_file);
             index.finalize();

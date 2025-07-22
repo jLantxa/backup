@@ -212,7 +212,7 @@ impl Plan {
         // lose this information.
         let mut repack_blob_info = HashMap::new();
         for referenced_blob_id in &self.referenced_blobs {
-            if let Some((pack_id, blob_type, offset, length)) =
+            if let Some((pack_id, blob_type, offset, length, _raw_length)) =
                 self.repo.index().read().get(referenced_blob_id)
             {
                 if self.obsolete_packs.contains(&pack_id) {
@@ -368,7 +368,7 @@ fn get_referenced_blobs_and_packs(repo: Arc<Repository>) -> Result<(BTreeSet<ID>
         }
 
         match index.read().get(&tree_id) {
-            Some((pack_id, _, _, _)) => {
+            Some((pack_id, _, _, _, _)) => {
                 referenced_packs.insert(pack_id);
             }
             None => {
@@ -398,7 +398,7 @@ fn get_referenced_blobs_and_packs(repo: Arc<Repository>) -> Result<(BTreeSet<ID>
                         }
 
                         match index.read().get(tree) {
-                            Some((pack_id, _, _, _)) => {
+                            Some((pack_id, _, _, _, _)) => {
                                 referenced_packs.insert(pack_id);
                             }
                             None => {
@@ -415,7 +415,7 @@ fn get_referenced_blobs_and_packs(repo: Arc<Repository>) -> Result<(BTreeSet<ID>
                             }
 
                             match index.read().get(blob_id) {
-                                Some((pack_id, _, _, _)) => {
+                                Some((pack_id, _, _, _, _)) => {
                                     referenced_packs.insert(pack_id);
                                 }
                                 None => {
