@@ -23,12 +23,10 @@ use indicatif::{ProgressBar, ProgressStyle};
 use crate::{
     backend::{StorageBackend, new_backend_with_prompt},
     commands::GlobalArgs,
-    global::{BlobType, FileType, ID},
+    global::FileType,
     repository::{
-        packer::Packer,
         repo::{RepoConfig, Repository},
         snapshot::SnapshotStreamer,
-        storage::SecureStorage,
         streamers::SerializedNodeStreamer,
         tree::NodeType,
     },
@@ -65,20 +63,15 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let config = RepoConfig {
         pack_size: (global_args.pack_size_mib * size::MiB as f32) as u64,
     };
-    let (repo, secure_storage) =
-        Repository::try_open(pass, global_args.key.as_ref(), backend.clone(), config)?;
+    let (repo, _) = Repository::try_open(pass, global_args.key.as_ref(), backend.clone(), config)?;
 
     match args.mode {
-        Mode::Repository => stats_repository(repo, backend, secure_storage),
+        Mode::Repository => stats_repository(repo, backend),
         Mode::Snapshots => stats_snapshots(repo),
     }
 }
 
-fn stats_repository(
-    repo: Arc<Repository>,
-    backend: Arc<dyn StorageBackend>,
-    secure_storage: Arc<SecureStorage>,
-) -> Result<()> {
+fn stats_repository(repo: Arc<Repository>, backend: Arc<dyn StorageBackend>) -> Result<()> {
     let spinner = ProgressBar::new_spinner();
     spinner.set_draw_target(default_bar_draw_target());
     spinner.set_style(
@@ -94,41 +87,10 @@ fn stats_repository(
     // Pack info
     let all_pack_files = repo.list_files(FileType::Pack)?;
     let num_packs = all_pack_files.len();
-    let mut num_blobs = 0;
-    let mut pack_raw_data_bytes: u64 = 0;
-    let mut pack_raw_meta_bytes: u64 = 0;
-    let mut pack_encoded_data_bytes: u64 = 0;
-    let mut pack_encoded_meta_bytes: u64 = 0;
     let mut total_pack_size: u64 = 0;
 
     for (i, pack_file_path) in all_pack_files.into_iter().enumerate() {
         spinner.set_message(format!("pack {} / {}", 1 + i, num_packs));
-
-        let id = ID::from_hex(
-            pack_file_path
-                .file_name()
-                .expect("Pack file should have a file name")
-                .to_str()
-                .expect("Filename should exist"),
-        )?;
-        let blob_descriptors =
-            Packer::parse_pack_header(&repo, backend.as_ref(), secure_storage.as_ref(), &id)?;
-
-        for blob in blob_descriptors {
-            match blob.blob_type {
-                BlobType::Data => {
-                    pack_raw_data_bytes += blob.raw_length as u64;
-                    pack_encoded_data_bytes += blob.length as u64;
-                    num_blobs += 1;
-                }
-                BlobType::Tree => {
-                    pack_raw_meta_bytes += blob.raw_length as u64;
-                    pack_encoded_meta_bytes += blob.length as u64;
-                    num_blobs += 1;
-                }
-                BlobType::Padding => continue,
-            }
-        }
 
         // Add header size (raw + encoded) as meta
         let stat = backend.lstat(&pack_file_path)?;
@@ -174,33 +136,6 @@ fn stats_repository(
 
     ui::cli::log!("Packs:");
     ui::cli::log!("\t{}", utils::format_count(num_packs, "pack", "packs"));
-    ui::cli::log!("\t{}", utils::format_count(num_blobs, "blob", "blobs"));
-    ui::cli::log!("\tTotal data size:");
-    ui::cli::log!(
-        "\t\tRaw:     {:>12}",
-        utils::format_size(pack_raw_data_bytes, 3)
-    );
-    ui::cli::log!(
-        "\t\tEncoded: {:>12}",
-        utils::format_size(pack_encoded_data_bytes, 3)
-    );
-    ui::cli::log!(
-        "\t\tCompression ratio: {:.2}x",
-        pack_raw_data_bytes as f32 / pack_encoded_data_bytes as f32
-    );
-    ui::cli::log!("\tTotal metadata size:");
-    ui::cli::log!(
-        "\t\tRaw:     {:>12}",
-        utils::format_size(pack_raw_meta_bytes, 3)
-    );
-    ui::cli::log!(
-        "\t\tEncoded: {:>12}",
-        utils::format_size(pack_encoded_meta_bytes, 3)
-    );
-    ui::cli::log!(
-        "\t\tCompression ratio: {:.2}x",
-        pack_raw_meta_bytes as f32 / pack_encoded_meta_bytes as f32
-    );
     ui::cli::log!(
         "\tTotal pack size: {}",
         utils::format_size(total_pack_size, 3)
