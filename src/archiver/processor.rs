@@ -175,7 +175,7 @@ fn chunk_and_save_blobs(
         global::defaults::MIN_CHUNK_SIZE as u32,
         global::defaults::AVG_CHUNK_SIZE as u32,
         global::defaults::MAX_CHUNK_SIZE as u32,
-        Normalization::Level1,
+        Normalization::Level0,
     );
 
     for result in chunker {
