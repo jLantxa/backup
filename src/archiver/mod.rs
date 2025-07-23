@@ -17,14 +17,7 @@
 mod processor;
 pub mod tree_serializer;
 
-use std::{
-    collections::BTreeSet,
-    path::PathBuf,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::{collections::BTreeSet, path::PathBuf, sync::Arc};
 
 use anyhow::{Result, anyhow, bail};
 use chrono::Local;
@@ -119,31 +112,24 @@ impl Archiver {
         let (process_item_tx, process_item_rx) =
             crossbeam_channel::bounded::<(PathBuf, StreamNode)>(arch.read_concurrency);
 
-        let error_flag = Arc::new(AtomicBool::new(false));
-
         // Diff thread. This thread iterates the NodeDiffStreamer and passes the
         // items to the item processor thread.
-        let error_flag_clone = error_flag.clone();
+        let diff_progress_reporter_clone = arch.progress_reporter.clone();
         let diff_thread = std::thread::spawn(move || {
             let diff_streamer = NodeDiffStreamer::new(previous_tree_streamer, fs_streamer);
 
             for diff_result in diff_streamer {
-                if error_flag_clone.load(Ordering::Acquire) {
-                    break;
-                }
-
                 if let Ok((path, prev, next, diff)) = diff_result {
                     if let Err(e) = diff_tx.send((path, prev, next, diff)) {
-                        error_flag_clone.store(true, Ordering::Release);
+                        diff_progress_reporter_clone.error();
                         ui::cli::error!(
                             "Archiver diff thread errored sending diff: {:?}",
                             e.to_string()
                         );
-                        break;
                     }
                 } else {
+                    diff_progress_reporter_clone.error();
                     ui::cli::error!("Archiver diff thread errored getting next diff");
-                    break;
                 }
             }
         });
@@ -154,7 +140,6 @@ impl Archiver {
         let diff_rx_clone = diff_rx.clone();
         let process_item_tx_clone = process_item_tx.clone();
         let repo_clone = arch.repo.clone();
-        let error_flag_clone = error_flag.clone();
         let processor_progress_reporter_clone = arch.progress_reporter.clone();
         let snapshot_root_path_clone = arch.snapshot_options.snapshot_root_path.clone();
 
@@ -166,13 +151,8 @@ impl Archiver {
         let processor_thread = std::thread::spawn(move || {
             pool.scope(|s| {
                 while let Ok((path, prev, next, diff)) = diff_rx_clone.recv() {
-                    if error_flag_clone.load(Ordering::Acquire) {
-                        break;
-                    }
-
                     let inner_process_item_tx_clone = process_item_tx_clone.clone();
                     let inner_repo_clone = repo_clone.clone();
-                    let inner_error_flag_clone = error_flag_clone.clone();
                     let inner_progress_reporter_clone = processor_progress_reporter_clone.clone();
                     let inner_snapshot_root_path_clone = snapshot_root_path_clone.clone();
 
@@ -182,17 +162,16 @@ impl Archiver {
                             stripped_path, diff
                         );
 
-
                         let processed_item_result = processor::process_item(
                             (path, prev, next, diff),
                             inner_repo_clone,
-                            inner_progress_reporter_clone,
+                            inner_progress_reporter_clone.clone(),
                         );
 
                         match processed_item_result {
                             Ok(Some(processed_item)) => {
                                 if let Err(e) = inner_process_item_tx_clone.send(processed_item) {
-                                    inner_error_flag_clone.store(true, Ordering::Release);
+                                    inner_progress_reporter_clone.error();
                                     ui::cli::error!(
                                         "Archiver processor task thread errored sending processing item: {:?}",
                                         e.to_string()
@@ -201,7 +180,7 @@ impl Archiver {
                             }
                             Ok(None) => {}
                             Err(e) => {
-                                inner_error_flag_clone.store(true, Ordering::Release);
+                                inner_progress_reporter_clone.error();
                                 ui::cli::error!(
                                     "Archiver thread errored processing item: {:?}",
                                     e.to_string()
@@ -219,7 +198,6 @@ impl Archiver {
 
         // Serializer thread. This thread receives processed items and serializes tree nodes as they
         // become finalized, bottom-up.
-        let error_flag_clone = error_flag.clone();
         let repo_clone = arch.repo.clone();
         let serializer_progress_reporter_clone = arch.progress_reporter.clone();
         let serializer_snapshot_root_path_clone = arch.snapshot_options.snapshot_root_path.clone();
@@ -232,10 +210,6 @@ impl Archiver {
             );
 
             while let Ok(item) = process_item_rx.recv() {
-                if error_flag_clone.load(Ordering::Acquire) {
-                    break;
-                }
-
                 // Notify reporter
                 let (item_path, _) = &item;
                 serializer_progress_reporter_clone.processed_file(
@@ -254,31 +228,28 @@ impl Archiver {
                     Ok((raw_tree_size, encoded_tree_size)) => serializer_progress_reporter_clone
                         .written_meta_bytes(raw_tree_size, encoded_tree_size),
                     Err(e) => {
-                        error_flag_clone.store(true, Ordering::Release);
+                        serializer_progress_reporter_clone.error();
                         ui::cli::error!(
                             "Archiver serializer thread errored handling processed item: {:?}",
                             e.to_string()
                         );
-                        break;
                     }
                 }
             }
 
             // After the loop, if no error occurred, finalize the root tree.
-            if !error_flag_clone.load(Ordering::Acquire) {
-                if let Err(e) = finalize_if_complete(
-                    serializer_snapshot_root_path_clone.clone(),
-                    repo_clone.as_ref(),
-                    &mut pending_trees,
-                    &mut final_root_tree_id,
-                    &serializer_snapshot_root_path_clone,
-                ) {
-                    error_flag_clone.store(true, Ordering::Release);
-                    ui::cli::error!(
-                        "Archiver serializer thread errored finalizing root tree: {:?}",
-                        e.to_string()
-                    );
-                }
+            if let Err(e) = finalize_if_complete(
+                serializer_snapshot_root_path_clone.clone(),
+                repo_clone.as_ref(),
+                &mut pending_trees,
+                &mut final_root_tree_id,
+                &serializer_snapshot_root_path_clone,
+            ) {
+                serializer_progress_reporter_clone.error();
+                ui::cli::error!(
+                    "Archiver serializer thread errored finalizing root tree: {:?}",
+                    e.to_string()
+                );
             }
 
             final_root_tree_id
@@ -320,15 +291,9 @@ impl Archiver {
                 description: archiver.snapshot_options.description,
                 summary: archiver.progress_reporter.get_summary(),
             }),
-            None => {
-                if error_flag.load(Ordering::Acquire) {
-                    Err(anyhow!("Snapshot creation failed due to a previous error."))
-                } else {
-                    Err(anyhow!(
-                        "Failed to finalize snapshot: No root tree ID was generated."
-                    ))
-                }
-            }
+            None => Err(anyhow!(
+                "Failed to finalize snapshot: No root tree ID was generated."
+            )),
         }
     }
 }

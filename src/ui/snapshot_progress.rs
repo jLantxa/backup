@@ -19,7 +19,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -53,6 +53,8 @@ pub struct SnapshotProgressReporter {
 
     processing_items: Arc<RwLock<VecDeque<PathBuf>>>, // List of items being processed (for displaying)
 
+    error_counter: Arc<AtomicU32>,
+
     #[allow(dead_code)]
     mp: MultiProgress,
     progress_bar: ProgressBar,
@@ -76,37 +78,40 @@ impl SnapshotProgressReporter {
         let meta_encoded_bytes_arc = Arc::new(AtomicU64::new(0));
 
         let processing_items_arc = Arc::new(RwLock::new(VecDeque::new()));
+        let error_counter_arc = Arc::new(AtomicU32::new(0));
 
         let processed_items_count_arc_clone = processed_items_count_arc.clone();
         let processed_bytes_arc_clone = processed_bytes_arc.clone();
+        let error_counter_arc_clone = error_counter_arc.clone();
         progress_bar.set_style(
             ProgressStyle::default_bar()
                 .template(
-                    "{msg}[{custom_elapsed}] [{bar:25.cyan/white}] {processed_bytes_formatted}  [{processed_items_formated}]  [ETA: {custom_eta}]"
+                    "{msg}[{custom_elapsed}] [{bar:25.cyan/white}] {processed_bytes_formatted}  [{processed_items_formated}]  [ETA: {custom_eta}] {error_counter} errors"
                 )
                 .unwrap()
                 .progress_chars("=> ")
-                .with_key("custom_elapsed", move |state:&ProgressState, w: &mut dyn std::fmt::Write| {
+                .with_key("custom_elapsed", move |state: &ProgressState, w: &mut dyn std::fmt::Write| {
                     let elapsed = state.elapsed();
                     let custom_elapsed= utils::pretty_print_duration(elapsed);
                     let _ = w.write_str(&custom_elapsed);
                 })
-                .with_key("processed_bytes_formatted", move |_state:&ProgressState, w: &mut dyn std::fmt::Write| {
+                .with_key("processed_bytes_formatted", move |_state: &ProgressState, w: &mut dyn std::fmt::Write| {
                     let bytes = processed_bytes_arc_clone.load(Ordering::SeqCst);
                     let s = format!("{} / {}", utils::format_size(bytes, 3), utils::format_size(expected_size, 3));
-
                     let _ = w.write_str(&s);
                 })
-                .with_key("processed_items_formated", move |_state:&ProgressState, w: &mut dyn std::fmt::Write| {
+                .with_key("processed_items_formated", move |_state: &ProgressState, w: &mut dyn std::fmt::Write| {
                     let item_count = processed_items_count_arc_clone.load(Ordering::SeqCst);
                     let s = format!("{item_count} / {expected_items} items");
-
                     let _ = w.write_str(&s);
                 })
-                 .with_key("custom_eta", move |state:&ProgressState, w: &mut dyn std::fmt::Write| {
+                .with_key("custom_eta", move |state: &ProgressState, w: &mut dyn std::fmt::Write| {
                     let eta = state.eta();
                     let custom_eta= utils::pretty_print_duration(eta);
                     let _ = w.write_str(&custom_eta);
+                })
+                .with_key("error_counter", move |_state: &ProgressState, w: &mut dyn std::fmt::Write| {
+                    let _ = w.write_str(&error_counter_arc_clone.load(Ordering::SeqCst).to_string());
                 })
         );
 
@@ -138,6 +143,7 @@ impl SnapshotProgressReporter {
             progress_bar,
             file_spinners,
             verbosity: global_opts().as_ref().unwrap().verbosity,
+            error_counter: error_counter_arc,
         }
     }
 
@@ -241,6 +247,11 @@ impl SnapshotProgressReporter {
     #[inline]
     pub fn unchanged_dir(&self) {
         self.diff_counts.write().unchanged_dirs += 1;
+    }
+
+    #[inline]
+    pub fn error(&self) {
+        self.error_counter.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn get_summary(&self) -> SnapshotSummary {
