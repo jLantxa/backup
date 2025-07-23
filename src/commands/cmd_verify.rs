@@ -14,12 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{collections::BTreeSet, path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    collections::BTreeSet,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Result, bail};
 use clap::Args;
 use colored::Colorize;
-use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
 
 use crate::{
     backend::new_backend_with_prompt,
@@ -32,7 +37,7 @@ use crate::{
         tree::NodeType,
         verify::{verify_blob, verify_pack, verify_snapshot_links},
     },
-    ui::{self, default_bar_draw_target},
+    ui::{self, PROGRESS_REFRESH_RATE_HZ, SPINNER_TICK_CHARS, default_bar_draw_target},
     utils::{self, size},
 };
 
@@ -44,13 +49,18 @@ use crate::{
                   that any active snapshot can be restored."
 )]
 pub struct CmdArgs {
-    /// Read actual data from the repository. If false, only verify that blobs are indexed.
-    #[clap(long, value_parser, default_value_t = false)]
-    pub snapshot_data: bool,
+    /// Simulate a restore, reading and checking actual data from the repository.
+    #[clap(
+        short = 's',
+        long = "simulate-restore",
+        value_parser,
+        default_value_t = false
+    )]
+    pub simulate_restore: bool,
 
     /// Read all packs and discover unreferenced blobs
-    #[clap(long, value_parser, default_value_t = false)]
-    pub unreferenced: bool,
+    #[clap(short = 'a', long = "all-packs", value_parser, default_value_t = false)]
+    pub all_packs: bool,
 }
 
 pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
@@ -68,7 +78,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let snapshot_streamer = SnapshotStreamer::new(repo.clone())?;
     let mut visited_blobs = BTreeSet::new();
 
-    if args.unreferenced {
+    if args.all_packs {
         let packs = repo.list_objects()?;
 
         let bar = ProgressBar::new(packs.len() as u64);
@@ -139,7 +149,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
                 .yellow()
         );
 
-        let res = if args.snapshot_data {
+        let res = if args.simulate_restore {
             verify_snapshot(repo.clone(), &snapshot_id, &mut visited_blobs)
         } else {
             verify_snapshot_links(repo.clone(), &snapshot_id)
@@ -182,7 +192,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
 
 /// Verify the checksum and contents of a snapshot with a known ID in the repository.
 /// This function will verify the checksum of the Snapshot object and the contents of all blobs
-/// referenced by it.
+/// referenced by it. It is a simulation of a restore.
 pub fn verify_snapshot(
     repo: Arc<Repository>,
     snapshot_id: &ID,
@@ -199,8 +209,8 @@ pub fn verify_snapshot(
     let streamer =
         SerializedNodeStreamer::new(repo.clone(), Some(tree_id), PathBuf::new(), None, None)?;
 
-    let bar = ProgressBar::new(snapshot.size());
-    bar.set_draw_target(default_bar_draw_target());
+    let mp = MultiProgress::with_draw_target(default_bar_draw_target());
+    let bar = mp.add(ProgressBar::new(snapshot.size()));
     bar.set_style(
         ProgressStyle::default_bar()
             .template("[{custom_elapsed}] [{bar:20.cyan/white}] {processed_bytes_formated}  [ETA: {custom_eta}]  {msg}")
@@ -234,9 +244,22 @@ pub fn verify_snapshot(
                 },
             ),
     );
+    let spinner = mp.add(ProgressBar::new_spinner());
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.cyan} {msg}")
+            .unwrap()
+            .tick_chars(SPINNER_TICK_CHARS),
+    );
+    spinner.enable_steady_tick(Duration::from_millis(
+        (1000.0_f32 / PROGRESS_REFRESH_RATE_HZ as f32) as u64,
+    ));
 
     let mut error_counter = 0;
-    for (_path, stream_node) in streamer.flatten() {
+    bar.set_position(0);
+    for (path, stream_node) in streamer.flatten() {
+        spinner.set_message(format!("{}", path.display()));
+
         let node = stream_node.node;
         match node.node_type {
             NodeType::File => {
@@ -264,7 +287,7 @@ pub fn verify_snapshot(
         }
     }
 
-    bar.finish_and_clear();
+    let _ = mp.clear();
 
     if error_counter > 0 {
         bail!("Snapshot has {} corrupt blobs", error_counter);
