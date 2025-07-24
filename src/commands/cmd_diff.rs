@@ -106,7 +106,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
                 let new_symbol = "+".bold().green().to_string();
 
                 let path_str = if target_node.is_dir() {
-                    format!("{}", path.to_string_lossy().blue())
+                    format!("{}", path.to_string_lossy().blue().bold())
                 } else {
                     path.display().to_string()
                 };
@@ -124,7 +124,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
                 let deleted_symbol = "-".bold().red().to_string();
 
                 let path_str = if source_node.is_dir() {
-                    format!("{}", path.to_string_lossy().blue())
+                    format!("{}", path.to_string_lossy().blue().bold())
                 } else {
                     path.display().to_string()
                 };
@@ -147,7 +147,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
                 let node_type_changed = source_node.node_type != target_node.node_type;
 
                 let path_str = if source_node.is_dir() {
-                    format!("{}", path.to_string_lossy().blue())
+                    format!("{}", path.to_string_lossy().blue().bold())
                 } else {
                     path.display().to_string()
                 };
@@ -177,7 +177,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
 
                 let content_changed = target_node.blobs != source_node.blobs;
                 let path_str = if target_node.is_dir() {
-                    format!("{}", path.to_string_lossy().blue())
+                    format!("{}", path.to_string_lossy().blue().bold())
                 } else {
                     path.display().to_string()
                 };
