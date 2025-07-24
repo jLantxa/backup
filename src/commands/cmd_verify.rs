@@ -266,7 +266,6 @@ pub fn verify_snapshot(
                 if let Some(blobs) = node.blobs {
                     for blob in blobs {
                         if !visited_blobs.contains(&blob) {
-                            visited_blobs.insert(blob.clone());
                             match verify_blob(repo.as_ref(), &blob) {
                                 Ok((raw_length, _encoded_length)) => bar.inc(raw_length),
                                 Err(_) => {
@@ -274,6 +273,14 @@ pub fn verify_snapshot(
                                     bar.set_message(format!("{error_counter} errors"));
                                 }
                             }
+                            visited_blobs.insert(blob.clone());
+                        } else {
+                            let (_, _, _, raw_length, _) = repo
+                                .index()
+                                .read()
+                                .get(&blob)
+                                .expect("We visited this blob, so it should be indexed");
+                            bar.inc(raw_length as u64);
                         }
                     }
                 }
