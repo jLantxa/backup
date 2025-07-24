@@ -363,24 +363,14 @@ impl Repository {
     }
 
     /// Saves a file to the repository
-    pub fn save_file(
-        &self,
-        file_type: FileType,
-        data: &[u8],
-        save_id: SaveID,
-    ) -> Result<(ID, u64, u64)> {
+    pub fn save_file(&self, file_type: FileType, data: &[u8]) -> Result<(ID, u64, u64)> {
         assert_ne!(file_type, FileType::Key);
         assert_ne!(file_type, FileType::Manifest);
 
         let raw_size = data.len() as u64;
-        let id = match save_id {
-            SaveID::CalculateID => ID::from_content(data),
-            SaveID::WithID(id) => id,
-        };
-
         let data = self.secure_storage.encode(data)?;
         let encoded_size = data.len() as u64;
-
+        let id = ID::from_content(&data);
         let path = self.get_path(file_type, &id);
         self.save_with_rename(&path, &data)?;
 
@@ -636,7 +626,7 @@ impl Repository {
             .join(&id_hex)
     }
 
-    fn get_path(&self, file_type: FileType, id: &ID) -> PathBuf {
+    pub fn get_path(&self, file_type: FileType, id: &ID) -> PathBuf {
         let id_hex = id.to_hex();
         match file_type {
             FileType::Pack => Self::get_object_path(&self.objects_path, id),

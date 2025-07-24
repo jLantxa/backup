@@ -27,9 +27,9 @@ use colored::Colorize;
 use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
 
 use crate::{
-    backend::new_backend_with_prompt,
+    backend::{StorageBackend, new_backend_with_prompt},
     commands::GlobalArgs,
-    global::{ID, defaults::SHORT_SNAPSHOT_ID_LEN},
+    global::{FileType, ID, defaults::SHORT_SNAPSHOT_ID_LEN},
     repository::{
         repo::{RepoConfig, Repository},
         snapshot::SnapshotStreamer,
@@ -150,7 +150,12 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
         );
 
         let res = if args.simulate_restore {
-            verify_snapshot(repo.clone(), &snapshot_id, &mut visited_blobs)
+            verify_snapshot(
+                repo.clone(),
+                backend.clone(),
+                &snapshot_id,
+                &mut visited_blobs,
+            )
         } else {
             verify_snapshot_links(repo.clone(), &snapshot_id)
         };
@@ -195,10 +200,12 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
 /// referenced by it. It is a simulation of a restore.
 pub fn verify_snapshot(
     repo: Arc<Repository>,
+    backend: Arc<dyn StorageBackend>,
     snapshot_id: &ID,
     visited_blobs: &mut BTreeSet<ID>,
 ) -> Result<()> {
-    let snapshot_data = repo.load_file(crate::global::FileType::Snapshot, snapshot_id)?;
+    let snapshot_path = repo.get_path(FileType::Snapshot, snapshot_id);
+    let snapshot_data = backend.read(&snapshot_path)?;
     let checksum = utils::calculate_hash(snapshot_data);
     if checksum != snapshot_id.0[..] {
         bail!("Invalid snapshot checksum");

@@ -31,7 +31,7 @@ use crate::{
     archiver::tree_serializer,
     backend::new_backend_with_prompt,
     commands::{GlobalArgs, UseSnapshot, find_use_snapshot},
-    global::{FileType, ID, SaveID, defaults::SHORT_SNAPSHOT_ID_LEN},
+    global::{FileType, ID, defaults::SHORT_SNAPSHOT_ID_LEN},
     repository::{snapshot::Snapshot, streamers::SerializedNodeStreamer},
     ui, utils,
 };
@@ -157,7 +157,6 @@ fn amend(
     let (new_id, raw_meta, encoded_meta) = repo.save_file(
         FileType::Snapshot,
         serde_json::to_string(&snapshot)?.as_bytes(),
-        SaveID::CalculateID,
     )?;
     raw += raw_meta;
     encoded += encoded_meta;

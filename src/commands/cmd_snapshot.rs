@@ -30,7 +30,7 @@ use crate::{
     archiver::{Archiver, SnapshotOptions},
     backend::new_backend_with_prompt,
     commands::{EMPTY_TAG_MARK, find_use_snapshot, parse_tags},
-    global::{self, ID, SaveID, defaults::SHORT_SNAPSHOT_ID_LEN},
+    global::{self, ID, defaults::SHORT_SNAPSHOT_ID_LEN},
     repository::{
         repo::RepoConfig,
         repo::Repository,
@@ -259,7 +259,6 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let (snapshot_id, snapshot_raw_size, snapshot_encoded_size) = repo.save_file(
         global::FileType::Snapshot,
         serde_json::to_string(&new_snapshot)?.as_bytes(),
-        SaveID::CalculateID,
     )?;
 
     progress_reporter.written_meta_bytes(snapshot_raw_size, snapshot_encoded_size);

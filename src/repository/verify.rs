@@ -97,12 +97,6 @@ pub fn verify_pack(
 /// index, but it doesn't check the actual data. The blobs or packs could actually not exist
 /// or be corrupted.
 pub fn verify_snapshot_links(repo: Arc<Repository>, snapshot_id: &ID) -> Result<()> {
-    let snapshot_data = repo.load_file(crate::global::FileType::Snapshot, snapshot_id)?;
-    let checksum = utils::calculate_hash(snapshot_data);
-    if checksum != snapshot_id.0[..] {
-        bail!("Invalid snapshot checksum");
-    }
-
     let snapshot = repo.load_snapshot(snapshot_id)?;
     let tree_id = snapshot.tree.clone();
     let streamer =
