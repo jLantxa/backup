@@ -281,25 +281,24 @@ impl Repository {
         Ok(Arc::new(repo))
     }
 
-    /// Saves a blob in the repository. This blob can be packed with other blobs in an object file.
-    /// This function accepts a blob and packs it "as is". If you need to encode the blob before'
-    /// packing it, use `encode_and_save_blob`.
-    /// Returns a tuple (`ID`, (raw_meta_size, encoded_meta_size))
-    pub fn save_blob(
+    /// Encodes and saves a blob in the repository. This blob can be packed with other blobs in an pack file.
+    /// Returns a tuple (`ID`, (raw_data_size, encoded_data_size), (raw_meta_size, encoded_meta_size))
+    #[allow(clippy::type_complexity)]
+    pub fn encode_and_save_blob(
         &self,
         blob_type: BlobType,
         data: Vec<u8>,
-        raw_length: u32,
         save_id: SaveID,
-    ) -> Result<(ID, (u64, u64))> {
+    ) -> Result<(ID, (u64, u64), (u64, u64))> {
         let packer = match blob_type {
             BlobType::Data => &self.data_packer,
             BlobType::Tree => &self.tree_packer,
             BlobType::Padding => panic!("Internal error: blob type not allowed"),
         };
 
-        let blob_length = data.len() as u64;
-
+        // The ID of a blob is the hash of its plaintext content.
+        // It has to be like that because the encoding appends a random 12-byte
+        // Nonce which would change the ID every time, ruining the deduplication.
         let id = match save_id {
             SaveID::CalculateID => ID::from_content(&data),
             SaveID::WithID(id) => id,
@@ -311,12 +310,16 @@ impl Repository {
 
         // If the blob was already pending, return early, as we are finished here.
         if blob_exists {
-            return Ok((id, (0, 0)));
+            return Ok((id, (0, 0), (0, 0)));
         }
+
+        let raw_length = data.len() as u64;
+        let data = self.secure_storage.encode(&data)?;
+        let encoded_length = data.len() as u64;
 
         packer
             .write()
-            .add_blob(id.clone(), blob_type, data, raw_length as u64, blob_length);
+            .add_blob(id.clone(), blob_type, data, raw_length, encoded_length);
 
         // Flush if the packer is considered full
         let packer_meta_size = if packer.read().size() > self.max_packer_size {
@@ -325,30 +328,7 @@ impl Repository {
             (0, 0)
         };
 
-        Ok((id, packer_meta_size))
-    }
-
-    /// Saves a blob in the repository. This blob can be packed with other blobs in an object file.
-    /// This function accepts a blob and encodes it before packing it. If you need to encode the blob "as is",
-    /// use `encode_and_save_blob`.
-    /// Returns a tuple (`ID`, (raw_data_size, encoded_data_size), (raw_meta_size, encoded_meta_size))
-    #[allow(clippy::type_complexity)]
-    pub fn encode_and_save_blob(
-        &self,
-        blob_type: BlobType,
-        data: Vec<u8>,
-    ) -> Result<(ID, (u64, u64), (u64, u64))> {
-        let raw_length = data.len() as u64;
-        let data = self.secure_storage.encode(&data)?;
-        let encoded_length = data.len() as u64;
-        let (id, (raw_packer_meta, encoded_packer_meta)) =
-            self.save_blob(blob_type, data, raw_length as u32, SaveID::CalculateID)?;
-
-        Ok((
-            id,
-            (raw_length, encoded_length),
-            (raw_packer_meta, encoded_packer_meta),
-        ))
+        Ok((id, (raw_length, encoded_length), packer_meta_size))
     }
 
     /// Loads a blob from the repository.
@@ -584,7 +564,6 @@ impl Repository {
 
     /// Reads from a repository file with offset and length.
     /// This function decodes the data.
-    #[inline]
     pub fn read_from_file_and_decode(
         &self,
         file_type: FileType,

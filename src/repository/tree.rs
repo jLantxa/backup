@@ -29,7 +29,7 @@ use std::os::unix::fs::MetadataExt;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::global::ID;
+use crate::global::{ID, SaveID};
 use crate::{global::BlobType, repository::repo::Repository};
 
 /// The type of a node (file, directory, symlink, etc.)
@@ -324,7 +324,7 @@ impl Tree {
 
         let tree_json = serde_json::to_string(self)?.as_bytes().to_vec();
         let (id, (raw_data_size, encoded_data_size), (raw_meta_size, encoded_meta_size)) =
-            repo.encode_and_save_blob(BlobType::Tree, tree_json)?;
+            repo.encode_and_save_blob(BlobType::Tree, tree_json, SaveID::CalculateID)?;
 
         Ok((
             id,

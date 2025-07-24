@@ -255,19 +255,19 @@ impl Plan {
             .expect("Failed to build thread pool");
         let process_result: Result<()> = pool.install(|| {
             repack_blob_info.into_par_iter().try_for_each(
-                |(blob_id, (pack_id, blob_type, offset, raw_length, length))| {
-                    let data = self.repo.read_from_file(
+                |(blob_id, (pack_id, blob_type, offset, _raw_length, length))| {
+                    // Reencoding the blob to repack it might seem unnecessary, and it is,
+                    // but this can serve as a validation mechanism and I also don't want
+                    // to leave any option to code paths that lead to any unencrypted repacked blob.
+                    let data = self.repo.read_from_file_and_decode(
                         FileType::Pack,
                         &pack_id,
                         offset as u64,
                         length as u64,
                     )?;
-                    let (_id, (_raw_meta, encoded_meta)) = self.repo.save_blob(
-                        blob_type,
-                        data,
-                        raw_length,
-                        SaveID::WithID(blob_id.clone()),
-                    )?;
+                    let (_id, (_raw_length, _encoded_length), (_raw_meta, encoded_meta)) = self
+                        .repo
+                        .encode_and_save_blob(blob_type, data, SaveID::WithID(blob_id.clone()))?;
                     added_size.fetch_add(length as u64 + encoded_meta, Ordering::AcqRel);
 
                     repack_bar.inc(1);

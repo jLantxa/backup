@@ -33,8 +33,13 @@ pub fn verify_blob(repo: &Repository, id: &ID) -> Result<(u64, u64)> {
     let blob_entry = repo.index().read().get(id);
     match blob_entry {
         Some((pack_id, _blob_type, offset, length, raw_length)) => {
-            let blob_data =
-                repo.read_from_file(FileType::Pack, &pack_id, offset as u64, length as u64)?;
+            // The ID of a blob is the hash of its plaintext content.
+            let blob_data = repo.read_from_file_and_decode(
+                FileType::Pack,
+                &pack_id,
+                offset as u64,
+                length as u64,
+            )?;
             let checksum = utils::calculate_hash(&blob_data);
             if checksum != id.0[..] {
                 bail!("Invalid blob checksum");
