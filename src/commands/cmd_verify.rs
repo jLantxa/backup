@@ -220,7 +220,7 @@ pub fn verify_snapshot(
     let bar = mp.add(ProgressBar::new(snapshot.size()));
     bar.set_style(
         ProgressStyle::default_bar()
-            .template("[{custom_elapsed}] [{bar:20.cyan/white}] {processed_bytes_formated}  [ETA: {custom_eta}]  {msg}")
+            .template("[{custom_elapsed}] [{bar:20.cyan/white}] {processed_bytes_formated}  [ETA: {custom_eta}]")
             .unwrap()
             .progress_chars("=> ")
             .with_key(
@@ -249,7 +249,7 @@ pub fn verify_snapshot(
                     let custom_eta = utils::pretty_print_duration(eta);
                     let _ = w.write_str(&custom_eta);
                 },
-            ),
+            )
     );
     let spinner = mp.add(ProgressBar::new_spinner());
     spinner.set_style(
@@ -262,7 +262,6 @@ pub fn verify_snapshot(
         (1000.0_f32 / PROGRESS_REFRESH_RATE_HZ as f32) as u64,
     ));
 
-    let mut error_counter = 0;
     bar.set_position(0);
     for (path, stream_node) in streamer.flatten() {
         spinner.set_message(format!("{}", path.display()));
@@ -273,14 +272,13 @@ pub fn verify_snapshot(
                 if let Some(blobs) = node.blobs {
                     for blob in blobs {
                         if !visited_blobs.contains(&blob) {
+                            visited_blobs.insert(blob.clone());
                             match verify_blob(repo.as_ref(), &blob) {
                                 Ok((raw_length, _encoded_length)) => bar.inc(raw_length),
                                 Err(_) => {
-                                    error_counter += 1;
-                                    bar.set_message(format!("{error_counter} errors"));
+                                    bail!("Snapshot has corrupt blobs");
                                 }
                             }
-                            visited_blobs.insert(blob.clone());
                         } else {
                             let (_, _, _, raw_length, _) = repo
                                 .index()
@@ -302,10 +300,6 @@ pub fn verify_snapshot(
     }
 
     let _ = mp.clear();
-
-    if error_counter > 0 {
-        bail!("Snapshot has {} corrupt blobs", error_counter);
-    }
 
     Ok(())
 }
