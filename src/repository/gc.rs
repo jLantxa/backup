@@ -15,7 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, HashSet},
     path::PathBuf,
     sync::{
         Arc,
@@ -44,8 +44,8 @@ use crate::{
 pub struct Plan {
     pub repo: Arc<Repository>,
     pub total_packs: usize, // Total number of blobs in the repository
-    pub referenced_blobs: BTreeSet<ID>, // Blobs referenced by existing snapshots
-    pub referenced_packs: BTreeSet<ID>, // Packs referenced by the referenced blobs
+    pub referenced_blobs: HashSet<ID>, // Blobs referenced by existing snapshots
+    pub referenced_packs: HashSet<ID>, // Packs referenced by the referenced blobs
     pub obsolete_packs: BTreeSet<ID>, // Packs containing non-referenced blobs
     pub small_packs: BTreeSet<ID>, // Small packs marked to be repacked (to merge)
     pub tolerated_packs: BTreeSet<ID>, // Packs containing garbage, but keep due to tolerance
@@ -186,6 +186,7 @@ impl Plan {
         Ok((deleted_size - added_size) as i64)
     }
 
+    /// Delete packs that contain no referenced blobs.
     fn delete_unused_packs(&self) -> Result<u64> {
         let unused_pack_delete_bar = ProgressBar::with_draw_target(
             Some(self.unused_packs.len() as u64),
@@ -209,9 +210,20 @@ impl Plan {
         Ok(deleted_size)
     }
 
-    fn repack(&self) -> Result<u64> {
+    /// Repack referenced blobs from obsolete packs to new packs
+    fn repack(&mut self) -> Result<u64> {
         // Collect information about the blobs to repack. Since we will rewrite the index, we will
         // lose this information.
+        let repack_bar = ProgressBar::with_draw_target(
+            Some(self.referenced_blobs.len() as u64),
+            default_bar_draw_target(),
+        )
+        .with_style(
+            ProgressStyle::default_bar()
+                .template("[{bar:25.cyan/white}] Finding blobs to repack: {pos}/{len}")
+                .unwrap()
+                .progress_chars("=> "),
+        );
         let mut repack_blob_info = HashMap::new();
         for referenced_blob_id in &self.referenced_blobs {
             if let Some((pack_id, blob_type, offset, length, raw_length)) =
@@ -224,7 +236,9 @@ impl Plan {
                     );
                 }
             }
+            repack_bar.inc(1);
         }
+        repack_bar.finish_and_clear();
 
         // Rewrite index (remove obsolete packs) and repack.
         // We read the blobs we need to repack and pass them to the repository.
@@ -285,6 +299,9 @@ impl Plan {
         Ok(added_size.load(Ordering::Relaxed))
     }
 
+    /// Delete old index files
+    /// This operation must be performed after the master index has been cleaned up
+    /// and all referenced packs have been repacked.
     fn delete_old_indices(&mut self) -> Result<u64> {
         // Delete obsolete index files
         // Make sure that the new index files don't overlap the files to delete.
@@ -318,6 +335,7 @@ impl Plan {
         Ok(deleted_size.load(Ordering::Relaxed))
     }
 
+    /// Delete all pack files marked as obsolete.
     fn delete_obsolete_packs(&self) -> Result<u64> {
         // Delete obsolete pack files
         let obsolete_pack_delete_bar = ProgressBar::with_draw_target(
@@ -348,9 +366,9 @@ impl Plan {
 }
 
 /// Returns all blobs and packs referenced by all existing snapshots in the repository.
-fn get_referenced_blobs_and_packs(repo: Arc<Repository>) -> Result<(BTreeSet<ID>, BTreeSet<ID>)> {
-    let mut referenced_blobs = BTreeSet::new();
-    let mut referenced_packs = BTreeSet::new();
+fn get_referenced_blobs_and_packs(repo: Arc<Repository>) -> Result<(HashSet<ID>, HashSet<ID>)> {
+    let mut referenced_blobs = HashSet::new();
+    let mut referenced_packs = HashSet::new();
     let index = repo.index();
 
     let snapshot_streamer = SnapshotStreamer::new(repo.clone())?;

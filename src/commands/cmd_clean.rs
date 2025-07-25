@@ -33,10 +33,7 @@ use crate::{
         repo::{RepoConfig, Repository},
         verify::verify_snapshot_links,
     },
-    ui::{
-        self, PROGRESS_REFRESH_RATE_HZ, SPINNER_TICK_CHARS, default_bar_draw_target,
-        table::{Alignment, Table},
-    },
+    ui::{self, PROGRESS_REFRESH_RATE_HZ, SPINNER_TICK_CHARS, default_bar_draw_target},
     utils::{self, size},
 };
 
@@ -86,40 +83,25 @@ pub fn run_with_repo(
 
     let plan = gc::scan(repo.clone(), tolerance)?;
 
-    let mut plan_table = Table::new_with_alignments(vec![Alignment::Left, Alignment::Right]);
-    plan_table.add_row(vec![
-        "Total packs".bold().to_string(),
-        plan.total_packs.to_string(),
-    ]);
-    plan_table.add_row(vec![
-        "Referenced blobs".bold().to_string(),
+    ui::cli::log!();
+    ui::cli::log!("Total packs: {}", plan.total_packs.to_string(),);
+    ui::cli::log!(
+        "Referenced blobs: {}",
         plan.referenced_blobs.len().to_string(),
-    ]);
-    plan_table.add_row(vec![
-        "Referenced packs".bold().to_string(),
+    );
+    ui::cli::log!(
+        "Referenced packs: {}",
         plan.referenced_packs.len().to_string(),
-    ]);
-    plan_table.add_row(vec![
-        "Unused packs".bold().to_string(),
-        plan.unused_packs.len().to_string(),
-    ]);
-    plan_table.add_row(vec![
-        "Packs to repack".bold().to_string(),
-        plan.obsolete_packs.len().to_string(),
-    ]);
-    plan_table.add_row(vec![
-        "Small packs".bold().to_string(),
-        plan.small_packs.len().to_string(),
-    ]);
-    plan_table.add_row(vec![
-        "Tolerated packs".bold().to_string(),
+    );
+    ui::cli::log!("Unused packs: {}", plan.unused_packs.len().to_string(),);
+    ui::cli::log!("Obsolete packs: {}", plan.obsolete_packs.len().to_string(),);
+    ui::cli::log!("Small packs: {}", plan.small_packs.len().to_string(),);
+    ui::cli::log!(
+        "Tolerated packs: {}",
         plan.tolerated_packs.len().to_string(),
-    ]);
+    );
 
     ui::cli::log!();
-    ui::cli::log!("{}", "Plan summary:".bold());
-    ui::cli::log!("{}", plan_table.render());
-
     if args.dry_run {
         ui::cli::log!("{} GC not executed", "[DRY RUN]".bold().purple());
     } else {
