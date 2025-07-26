@@ -86,21 +86,21 @@ impl SnapshotProgressReporter {
         progress_bar.set_style(
             ProgressStyle::default_bar()
                 .template(
-                    "{msg}[{custom_elapsed}] [{bar:25.cyan/white}] {processed_bytes_formatted}  [{processed_items_formated}]  [ETA: {custom_eta}] {error_counter} errors"
+                    "[{bar:20.cyan/white}] [{custom_elapsed}]  {processed_bytes_fmt}  [{processed_items_fmt}]  [ETA: {custom_eta}]  {errors} errors"
                 )
-                .unwrap()
+                .expect("The snapshot progress bar should have been created")
                 .progress_chars("=> ")
                 .with_key("custom_elapsed", move |state: &ProgressState, w: &mut dyn std::fmt::Write| {
                     let elapsed = state.elapsed();
                     let custom_elapsed= utils::pretty_print_duration(elapsed);
                     let _ = w.write_str(&custom_elapsed);
                 })
-                .with_key("processed_bytes_formatted", move |_state: &ProgressState, w: &mut dyn std::fmt::Write| {
+                .with_key("processed_bytes_fmt", move |_state: &ProgressState, w: &mut dyn std::fmt::Write| {
                     let bytes = processed_bytes_arc_clone.load(Ordering::SeqCst);
                     let s = format!("{} / {}", utils::format_size(bytes, 3), utils::format_size(expected_size, 3));
                     let _ = w.write_str(&s);
                 })
-                .with_key("processed_items_formated", move |_state: &ProgressState, w: &mut dyn std::fmt::Write| {
+                .with_key("processed_items_fmt", move |_state: &ProgressState, w: &mut dyn std::fmt::Write| {
                     let item_count = processed_items_count_arc_clone.load(Ordering::SeqCst);
                     let s = format!("{item_count} / {expected_items} items");
                     let _ = w.write_str(&s);
@@ -110,7 +110,7 @@ impl SnapshotProgressReporter {
                     let custom_eta= utils::pretty_print_duration(eta);
                     let _ = w.write_str(&custom_eta);
                 })
-                .with_key("error_counter", move |_state: &ProgressState, w: &mut dyn std::fmt::Write| {
+                .with_key("errors", move |_state: &ProgressState, w: &mut dyn std::fmt::Write| {
                     let _ = w.write_str(&error_counter_arc_clone.load(Ordering::SeqCst).to_string());
                 })
         );
