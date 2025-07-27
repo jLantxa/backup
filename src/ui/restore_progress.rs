@@ -53,7 +53,7 @@ impl RestoreProgressReporter {
         progress_bar.set_style(
             ProgressStyle::default_bar()
                 .template(
-                    "[{custom_elapsed}] [{bar:25.cyan/white}] [{processed_bytes_formated}] [{processed_items_formated}]  [ETA: {custom_eta}]"
+                    "[{bar:20.cyan/white}] [{custom_elapsed}]  [{processed_bytes_formated}]  [{processed_items_formated}]  [ETA: {custom_eta}]"
                 )
                 .unwrap()
                 .progress_chars("=> ")

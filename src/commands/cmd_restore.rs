@@ -136,6 +136,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     let mut total_bytes: u64 = 0;
     let mut num_files = 0;
     let mut num_dirs = 0;
+    let mut num_expected_items = 0;
     let scan_node_streamer = SerializedNodeStreamer::new(
         repo.clone(),
         Some(snapshot.tree.clone()),
@@ -156,6 +157,7 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     ));
     for (_path, stream_node) in scan_node_streamer.flatten() {
         let node = stream_node.node;
+        num_expected_items += 1;
 
         if node.is_dir() {
             num_dirs += 1;
@@ -182,7 +184,6 @@ pub fn run(global_args: &GlobalArgs, args: &CmdArgs) -> Result<()> {
     );
 
     const NUM_SHOWN_PROCESSING_ITEMS: usize = 1;
-    let num_expected_items = snapshot.summary.processed_items_count;
     let progress_reporter = Arc::new(RestoreProgressReporter::new(
         num_expected_items,
         total_bytes,
