@@ -78,7 +78,7 @@ The goal of this milestone is to add convenience and quality of like feature. Th
 - [x] `verify` command to verify the integrity of the data stored in the repository.
 - [x] `stats` command to display stats about the repository and its contents.
 - [ ] Key managment.
-- [ ] FUSE mount.
+- [x] FUSE mount.
 
 ## Getting started
 
@@ -112,6 +112,7 @@ Commands:
   amend     Amend an existing snapshot
   ls        List nodes in the repository
   diff      Show differences between snapshots
+  mount     Mount the repository as a file system
   cat       Print repository objects
   verify    Verify the integrity of the data stored in the repository
   stats     Display stats about the repository and its contents

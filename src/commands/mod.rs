@@ -43,6 +43,9 @@ pub mod cmd_snapshot;
 pub mod cmd_stats;
 pub mod cmd_verify;
 
+#[cfg(unix)]
+pub mod cmd_mount;
+
 // CLI arguments
 #[derive(Parser, Debug)]
 #[clap(
@@ -71,6 +74,8 @@ pub enum Command {
     Amend(cmd_amend::CmdArgs),
     Ls(cmd_ls::CmdArgs),
     Diff(cmd_diff::CmdArgs),
+    #[cfg(unix)]
+    Mount(cmd_mount::CmdArgs),
     Cat(cmd_cat::CmdArgs),
     Verify(cmd_verify::CmdArgs),
     Stats(cmd_stats::CmdArgs),
@@ -204,6 +209,9 @@ pub fn run(args: &Cli) -> Result<()> {
         Command::Ls(cmd_args) => cmd_ls::run(&args.global_args, cmd_args),
         Command::Diff(cmd_args) => cmd_diff::run(&args.global_args, cmd_args),
         Command::Cat(cmd_args) => cmd_cat::run(&args.global_args, cmd_args),
+
+        #[cfg(unix)]
+        Command::Mount(cmd_args) => cmd_mount::run(&args.global_args, cmd_args),
         Command::Verify(cmd_args) => cmd_verify::run(&args.global_args, cmd_args),
         Command::Stats(cmd_args) => cmd_stats::run(&args.global_args, cmd_args),
     }
